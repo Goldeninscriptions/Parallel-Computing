@@ -67,9 +67,6 @@ int main (int argc, char *argv[])
             yelemIdx.push_back(ey);
         }
     }
-    data->xelemIdx = xelemIdx;
-    data->yelemIdx = yelemIdx;
-
     QuadraturePoint * quad1 = new QuadraturePoint(p+1, 0, 1);
     QuadraturePoint * quad2 = new QuadraturePoint(q+1, 0, 1);
 
