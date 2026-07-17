@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     std::vector<double> NURBSExtraction1;
     std::vector<double> NURBSExtraction2;
 
-    ElementMF * elemmf = new ElementMF(p, q);
+    ElementMFSF * elemmf = new ElementMFSF(p, q);
     const int nLocBas = elemmf->GetNumLocalBasis();
     LocalAssemblyMFSF * locassemmf = new LocalAssemblyMFSF(p, q);
 

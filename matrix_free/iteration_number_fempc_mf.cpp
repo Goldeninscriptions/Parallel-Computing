@@ -3,6 +3,7 @@
 #include "FileManager.hpp"
 #include "GlobalAssemblyMF.hpp"
 #include "GlobalAssembly.hpp"
+#include "MatrixFreeMode.hpp"
 
 typedef struct {
     KSP innerksp;
@@ -38,9 +39,12 @@ typedef struct {
     std::vector<double> elem_size2;
     std::vector<double> NURBSExtraction1;
     std::vector<double> NURBSExtraction2;
+    MatrixFreeMode mode;
     GlobalAssemblyMF * globalassem;
-    LocalAssemblyMF * locassem;
-    ElementMF * elem;
+    LocalAssemblyMF * locassem_mf;
+    LocalAssemblyMFSF * locassem_mfsf;
+    ElementMF * elem_mf;
+    ElementMFSF * elem_mfsf;
 } MyMeshData;
 
 PetscErrorCode MyMatMult(Mat A, Vec x, Vec y)
@@ -50,11 +54,22 @@ PetscErrorCode MyMatMult(Mat A, Vec x, Vec y)
 
     VecSet(y, 0.0);
     
-    data->globalassem->MatMulMF(data->locassem,
-        data->IEN, data->ID, data->Dir, data->CP,
-        data->NURBSExtraction1, data->NURBSExtraction2,
-        data->elem_size1, data->elem_size2,
-        data->elem, x, y);
+    if (data->mode == MatrixFreeMode::MF)
+    {
+        data->globalassem->MatMulMF(data->locassem_mf,
+            data->IEN, data->ID, data->Dir, data->CP,
+            data->NURBSExtraction1, data->NURBSExtraction2,
+            data->elem_size1, data->elem_size2,
+            data->elem_mf, x, y);
+    }
+    else
+    {
+        data->globalassem->MatMulMF(data->locassem_mfsf,
+            data->IEN, data->ID, data->Dir, data->CP,
+            data->NURBSExtraction1, data->NURBSExtraction2,
+            data->elem_size1, data->elem_size2,
+            data->elem_mfsf, x, y);
+    }
 
     return 0;
 }
@@ -73,6 +88,10 @@ PetscErrorCode MyMatCreateVecs(Mat A, Vec *x, Vec *y)
 
 int main(int argc, char *argv[])
 {
+    MatrixFreeMode mode = MatrixFreeMode::MF;
+    if (!ParseMatrixFreeMode(argc, argv, mode))
+        return 0;
+
     int p, q, nElemX, nElemY, part_num_1d, dim;
     double Lx, Ly;
     std::string base_name;
@@ -99,18 +118,20 @@ int main(int argc, char *argv[])
         std::cout << "part_num_1d: " << part_num_1d << std::endl;
         std::cout << "dim: " << dim << std::endl;
         std::cout << "base_name: " << base_name << std::endl;
+        std::cout << "matrix_free_mode: " << MatrixFreeModeName(mode) << std::endl;
     }
 
     int nlocalfunc;
     int nlocalelemx;
     int nlocalelemy;
     std::vector<int> ghostID;
-    ElementMF * elemmf = new ElementMF(p, q);
-    const int nLocBas = elemmf->GetNumLocalBasis();
-    LocalAssemblyMF * locassemmf = new LocalAssemblyMF(p, q);
-
     MyMeshData *data;
     PetscNew(&data);
+    data->mode = mode;
+    data->locassem_mf = nullptr;
+    data->locassem_mfsf = nullptr;
+    data->elem_mf = nullptr;
+    data->elem_mfsf = nullptr;
     
     std::string filename = fm->GetPartitionFilename(base_name, rank);
     fm->ReadPartition(filename, nlocalfunc,
@@ -127,15 +148,37 @@ int main(int argc, char *argv[])
         data->ghostIdx[ii] = ghostID[ii];
     }
     
-    data->elem = elemmf;
-    data->locassem = locassemmf;
+    int nLocBas = 0;
+    if (mode == MatrixFreeMode::MF)
+    {
+        data->elem_mf = new ElementMF(p, q);
+        data->locassem_mf = new LocalAssemblyMF(p, q);
+        nLocBas = data->elem_mf->GetNumLocalBasis();
+    }
+    else
+    {
+        data->elem_mfsf = new ElementMFSF(p, q);
+        data->locassem_mfsf = new LocalAssemblyMFSF(p, q);
+        nLocBas = data->elem_mfsf->GetNumLocalBasis();
+    }
+
     data->globalassem = new GlobalAssemblyMF(nLocBas, nlocalfunc,
         nlocalelemx, nlocalelemy, ghostID);
 
-    data->globalassem->AssemLoad(data->locassem, data->IEN,
-        data->ID, data->Dir, data->CP,
-        data->NURBSExtraction1, data->NURBSExtraction2,
-        data->elem_size1, data->elem_size2, data->elem);
+    if (mode == MatrixFreeMode::MF)
+    {
+        data->globalassem->AssemLoad(data->locassem_mf, data->IEN,
+            data->ID, data->Dir, data->CP,
+            data->NURBSExtraction1, data->NURBSExtraction2,
+            data->elem_size1, data->elem_size2, data->elem_mf);
+    }
+    else
+    {
+        data->globalassem->AssemLoad(data->locassem_mfsf, data->IEN,
+            data->ID, data->Dir, data->CP,
+            data->NURBSExtraction1, data->NURBSExtraction2,
+            data->elem_size1, data->elem_size2, data->elem_mfsf);
+    }
 
     MPI_Barrier(PETSC_COMM_WORLD);
 
@@ -247,8 +290,10 @@ int main(int argc, char *argv[])
     VecView(u, PETSC_VIEWER_STDOUT_WORLD);
 
     delete fm; fm = nullptr;
-    delete data->elem; data->elem = nullptr;
-    delete data->locassem; data->locassem = nullptr;
+    delete data->elem_mf; data->elem_mf = nullptr;
+    delete data->elem_mfsf; data->elem_mfsf = nullptr;
+    delete data->locassem_mf; data->locassem_mf = nullptr;
+    delete data->locassem_mfsf; data->locassem_mfsf = nullptr;
     delete data->globalassem; data->globalassem = nullptr;
     delete data; data = nullptr;
     delete elem_fem; elem_fem = nullptr;
