@@ -1,4 +1,5 @@
 #include "FileManager.hpp"
+#include <algorithm>
 
 int main(int argc, char **argv)
 {
