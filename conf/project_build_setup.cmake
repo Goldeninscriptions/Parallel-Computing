@@ -88,6 +88,8 @@ macro(pc_setup_common_dependencies)
   set(one_value_args MODULE_DIR)
   cmake_parse_arguments(PC "${options}" "${one_value_args}" "" ${ARGN})
 
+  include_directories("${PC_CONF_DIR}")
+
   set(_pc_mpi_include_dirs)
   if(DEFINED PC_MPI_INCLUDE_DIRS)
     list(APPEND _pc_mpi_include_dirs ${PC_MPI_INCLUDE_DIRS})

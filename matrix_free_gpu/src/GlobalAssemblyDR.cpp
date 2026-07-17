@@ -1,4 +1,5 @@
 #include "GlobalAssemblyDR.hpp"
+#include "petsc_compat.hpp"
 
 GlobalAssemblyDR::GlobalAssemblyDR(FileManager * const &fm, const std::vector<int> &IEN,
     const std::vector<int> &ID, const std::vector<int> &Dir,
@@ -10,7 +11,7 @@ GlobalAssemblyDR::GlobalAssemblyDR(FileManager * const &fm, const std::vector<in
     const int dnz = 2*nLocBas+1;
     const int onz = dnz;
     MatCreateAIJ(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, PETSC_DETERMINE,
-        PETSC_DETERMINE, dnz, PETSC_NULLPTR, dnz, PETSC_NULLPTR, &K);
+        PETSC_DETERMINE, dnz, PC_PETSC_NULLPTR, dnz, PC_PETSC_NULLPTR, &K);
     MatSetOption(K, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
     AssemNonZeroEstimate(locassem, IEN, ID, Dir);
 

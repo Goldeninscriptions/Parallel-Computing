@@ -1,4 +1,5 @@
 #include "GlobalAssembly.hpp"
+#include "petsc_compat.hpp"
 
 GlobalAssembly::GlobalAssembly(const std::vector<int> &IEN, const std::vector<int> &ID,
     const std::vector<int> &Dir, LocalAssembly * const &locassem, const int &nLocBas,
@@ -9,7 +10,7 @@ GlobalAssembly::GlobalAssembly(const std::vector<int> &IEN, const std::vector<in
     const int dnz = 2*nLocBas+1;
     const int onz = dnz;
     MatCreateAIJ(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, PETSC_DETERMINE,
-        PETSC_DETERMINE, dnz, PETSC_NULL, dnz, PETSC_NULL, &K);
+        PETSC_DETERMINE, dnz, PC_PETSC_NULLPTR, dnz, PC_PETSC_NULLPTR, &K);
     VecCreate(PETSC_COMM_WORLD, &F);
     VecSetSizes(F, nlocalfunc, PETSC_DECIDE);
     VecSetFromOptions(F);
@@ -52,7 +53,7 @@ void GlobalAssembly::NonZeroCount(const Mat &K, std::vector<int> &dnz, std::vect
 
         PetscInt ncols;
         const PetscInt *cols;
-        MatGetRow(K, globalrow, &ncols, &cols, PETSC_NULL);
+        MatGetRow(K, globalrow, &ncols, &cols, PC_PETSC_NULLPTR);
 
         for (PetscInt j = 0; j < ncols; ++j)
         {

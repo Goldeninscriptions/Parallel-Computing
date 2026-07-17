@@ -1,0 +1,12 @@
+#ifndef PARALLEL_COMPUTING_PETSC_COMPAT_HPP
+#define PARALLEL_COMPUTING_PETSC_COMPAT_HPP
+
+#include <petscversion.h>
+
+#if PETSC_VERSION_LT(3,19,0)
+#define PC_PETSC_NULLPTR PETSC_NULL
+#else
+#define PC_PETSC_NULLPTR PETSC_NULLPTR
+#endif
+
+#endif
