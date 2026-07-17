@@ -1,68 +1,45 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(EigenvalueProblem)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/project_build_setup.cmake)
+pc_include_machine_config()
+pc_apply_machine_compilers()
 
-IF(COMMAND cmake_policy)
-  cmake_policy(SET CMP0003 NEW)
-  cmake_policy(SET CMP0074 NEW)
-ENDIF(COMMAND cmake_policy)
+project(eigenvalue_problem LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+cmake_policy(SET CMP0003 NEW)
+cmake_policy(SET CMP0074 NEW)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+pc_set_default_build_flags()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/basic_variable_log.cmake)
+pc_setup_common_dependencies(
+  USE_OPENMP
+  USE_PETSC
+  USE_SLEPC
+  MODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../conf"
+)
 
-# OpenMP
-find_package(OpenMP REQUIRED)
-
-# Add your source files here
-set(EIGEN3_INCLUDE_DIR "$ENV{HOME}/lib/eigen-3.4.0")
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-message(STATUS "EIGEN3_INCLUDE_DIR: ${EIGEN3_INCLUDE_DIR}")
-message(STATUS "INCLUDE_DIR: ${INCLUDE_DIR}")
-message(STATUS "SOURCE_DIR: ${SOURCE_DIR}")
-
-# Include directories
-include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${INCLUDE_DIR})
 
-# Add source files
-set(SOURCES ${SOURCE_DIR}/BSplineBasis.cpp
-            ${SOURCE_DIR}/ControlPointGenerator.cpp
-            ${SOURCE_DIR}/IENGenerator.cpp
-            ${SOURCE_DIR}/IDGenerator.cpp
-            ${SOURCE_DIR}/NURBSExtractionGenerator.cpp
-            ${SOURCE_DIR}/Partition.cpp
-            ${SOURCE_DIR}/FileManager.cpp
-            ${SOURCE_DIR}/BernsteinBasis.cpp
-            ${SOURCE_DIR}/Element.cpp
-            ${SOURCE_DIR}/RefElement.cpp
-            ${SOURCE_DIR}/QuadraturePoint.cpp
-            ${SOURCE_DIR}/LocalAssembly.cpp
-            ${SOURCE_DIR}/GlobalAssembly.cpp
-            ${SOURCE_DIR}/AbscissaeGenerator.cpp
-            ${SOURCE_DIR}/ElementFEM.cpp)
-
-# Find PETSc
-set(PETSC_DIR $ENV{HOME}/lib/petsc-3.18.6-opt)
-set(PETSC_ARCH .)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/module")
-find_package(PETSc REQUIRED)
-message(STATUS "PETSC_INC: ${PETSC_INC}")
-message(STATUS "PETSC_LIB: ${PETSC_LIB}")
-
-set(SLEPC_DIR $ENV{HOME}/lib/slepc-3.18.3-opt)
-find_package(SLEPc REQUIRED)
-
-set(CMAKE_C_COMPILER  /home/yxh/lib/mpich-4.3.0/bin/mpicc)
-set(CMAKE_CXX_COMPILER /home/yxh/lib/mpich-4.3.0/bin/mpicxx)
-
-include_directories(${PETSC_INC})
-include_directories(${SLEPC_INC})
-message(STATUS "SLEPC_INC: ${SLEPC_INC}")
-message(STATUS "SLEPC_LIB: ${SLEPC_LIB}")
+set(SOURCES
+  ${SOURCE_DIR}/BSplineBasis.cpp
+  ${SOURCE_DIR}/ControlPointGenerator.cpp
+  ${SOURCE_DIR}/IENGenerator.cpp
+  ${SOURCE_DIR}/IDGenerator.cpp
+  ${SOURCE_DIR}/NURBSExtractionGenerator.cpp
+  ${SOURCE_DIR}/Partition.cpp
+  ${SOURCE_DIR}/FileManager.cpp
+  ${SOURCE_DIR}/BernsteinBasis.cpp
+  ${SOURCE_DIR}/Element.cpp
+  ${SOURCE_DIR}/RefElement.cpp
+  ${SOURCE_DIR}/QuadraturePoint.cpp
+  ${SOURCE_DIR}/LocalAssembly.cpp
+  ${SOURCE_DIR}/GlobalAssembly.cpp
+  ${SOURCE_DIR}/AbscissaeGenerator.cpp
+  ${SOURCE_DIR}/ElementFEM.cpp
+)
 
 add_library(eigenvalue_problem_lib ${SOURCES})
 
@@ -84,13 +61,5 @@ target_link_libraries(iter_num_fem eigenvalue_problem_lib ${PETSC_LIB})
 add_executable(mult mult.cpp)
 target_link_libraries(mult eigenvalue_problem_lib ${PETSC_LIB})
 
-if(OPENMP_CXX_FOUND)
-  set_target_properties( eigenvalue_problem_lib PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -DUSE_OPENMP" )
-  set_target_properties( preprocess PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -DUSE_OPENMP" )
-  set_target_properties( preprocess_fem PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -DUSE_OPENMP" )
-  target_include_directories( eigenvalue_problem_lib PRIVATE ${OpenMP_CXX_INCLUDE_DIR} )
-  target_include_directories( preprocess PRIVATE ${OpenMP_CXX_INCLUDE_DIR} )
-  target_include_directories( preprocess_fem PRIVATE ${OpenMP_CXX_INCLUDE_DIR} )
-  target_link_libraries( preprocess ${OpenMP_CXX_LIBRARIES} )
-  target_link_libraries( preprocess_fem ${OpenMP_CXX_LIBRARIES} )
-endif()
+pc_enable_openmp_for_targets(eigenvalue_problem_lib preprocess preprocess_fem)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/message_compiler_setup.cmake)
