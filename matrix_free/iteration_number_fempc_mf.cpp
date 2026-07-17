@@ -22,7 +22,7 @@ PetscErrorCode MyPCDestroy(PC pc)
     MyPCCtx *ctx;
     PCShellGetContext(pc, (void**)&ctx);
     KSPDestroy(&ctx->innerksp);
-    PetscFree(ctx);
+    PetscCall(PetscFree(ctx));
     return 0;
 }
 

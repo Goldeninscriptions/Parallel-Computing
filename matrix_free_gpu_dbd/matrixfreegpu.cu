@@ -28,7 +28,7 @@ PetscErrorCode MyPCDestroy(PC pc)
     MyPCCtx *ctx;
     PCShellGetContext(pc, (void**)&ctx);
     KSPDestroy(&ctx->innerksp);
-    PetscFree(ctx);
+    PetscCall(PetscFree(ctx));
     return 0;
 }
 
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
     VecDestroy(&u);
     MatDestroy(&K);
     KSPDestroy(&ksp);
-    PetscFree(data);
+    PetscCall(PetscFree(data));
 
     PetscFinalize();
     return 0;
