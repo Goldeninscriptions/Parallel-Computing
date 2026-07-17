@@ -28,6 +28,7 @@ int main (int argc, char *argv[])
 
     std::vector<double> CP;
     std::vector<int> ID;
+    std::vector<int> localID;
     std::vector<int> ghostID;
     std::vector<int> Dir;
     std::vector<int> IEN;
@@ -43,7 +44,7 @@ int main (int argc, char *argv[])
     fm->ReadPartition(filename, nlocalfunc,
         nlocalelemx, nlocalelemy,
         elem_size1, elem_size2,
-        CP, ID, ghostID, Dir, IEN, NURBSExtraction1, NURBSExtraction2);
+        CP, ID, localID, ghostID, Dir, IEN, NURBSExtraction1, NURBSExtraction2);
 
     ElementMF * elemmf = new ElementMF(p, q);
     int nLocBas = elemmf->GetNumLocalBasis();
