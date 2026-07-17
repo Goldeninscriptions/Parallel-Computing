@@ -21,30 +21,34 @@ pc_setup_common_dependencies(
 
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(COMMON_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/include")
+set(COMMON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/src")
 
 include_directories(${INCLUDE_DIR})
+include_directories(${COMMON_INCLUDE_DIR}/mesh ${COMMON_INCLUDE_DIR}/mf ${COMMON_INCLUDE_DIR}/gpu)
 
 set(SOURCES
-  ${SOURCE_DIR}/BSplineBasis.cpp
-  ${SOURCE_DIR}/ControlPointGenerator.cpp
-  ${SOURCE_DIR}/IENGenerator.cpp
-  ${SOURCE_DIR}/IDGenerator.cpp
-  ${SOURCE_DIR}/NURBSExtractionGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/BSplineBasis.cpp
+  ${COMMON_SOURCE_DIR}/mesh/ControlPointGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/IENGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/IDGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/NURBSExtractionGenerator.cpp
   ${SOURCE_DIR}/Partition.cpp
   ${SOURCE_DIR}/FileManager.cpp
-  ${SOURCE_DIR}/BernsteinBasis.cpp
-  ${SOURCE_DIR}/QuadraturePoint.cpp
-  ${SOURCE_DIR}/LocalAssembly.cpp
-  ${SOURCE_DIR}/GlobalAssemblyDR.cpp
-  ${SOURCE_DIR}/AbscissaeGenerator.cpp
-  ${SOURCE_DIR}/ElementFEM.cpp
-  ${SOURCE_DIR}/Elem2COOGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/BernsteinBasis.cpp
+  ${COMMON_SOURCE_DIR}/mesh/QuadraturePoint.cpp
+  ${COMMON_SOURCE_DIR}/mf/LocalAssembly.cpp
+  ${COMMON_SOURCE_DIR}/mf/ElementMFSF.cpp
+  ${COMMON_SOURCE_DIR}/gpu/GlobalAssemblyDR.cpp
+  ${COMMON_SOURCE_DIR}/mesh/AbscissaeGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/ElementFEM.cpp
+  ${COMMON_SOURCE_DIR}/mesh/Elem2COOGenerator.cpp
 )
 
 set(CUDA_SOURCES
-  ${SOURCE_DIR}/assembly.cu
+  ${COMMON_SOURCE_DIR}/gpu/assembly.cu
   ${SOURCE_DIR}/mult.cu
-  ${SOURCE_DIR}/GlobalAssembly.cu
+  ${COMMON_SOURCE_DIR}/gpu/GlobalAssembly.cu
   ${SOURCE_DIR}/GlobalAssemblyMF.cu
 )
 

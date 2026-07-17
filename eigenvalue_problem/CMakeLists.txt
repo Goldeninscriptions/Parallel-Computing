@@ -20,24 +20,27 @@ pc_setup_common_dependencies(
 
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(COMMON_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/include")
+set(COMMON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/src")
 
 include_directories(${INCLUDE_DIR})
+include_directories(${COMMON_INCLUDE_DIR}/mesh)
 
 set(SOURCES
-  ${SOURCE_DIR}/BSplineBasis.cpp
-  ${SOURCE_DIR}/ControlPointGenerator.cpp
-  ${SOURCE_DIR}/IENGenerator.cpp
-  ${SOURCE_DIR}/IDGenerator.cpp
-  ${SOURCE_DIR}/NURBSExtractionGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/BSplineBasis.cpp
+  ${COMMON_SOURCE_DIR}/mesh/ControlPointGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/IENGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/IDGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/NURBSExtractionGenerator.cpp
   ${SOURCE_DIR}/Partition.cpp
   ${SOURCE_DIR}/FileManager.cpp
   ${SOURCE_DIR}/BernsteinBasis.cpp
-  ${SOURCE_DIR}/Element.cpp
+  ${COMMON_SOURCE_DIR}/mesh/Element.cpp
   ${SOURCE_DIR}/RefElement.cpp
-  ${SOURCE_DIR}/QuadraturePoint.cpp
-  ${SOURCE_DIR}/LocalAssembly.cpp
+  ${COMMON_SOURCE_DIR}/mesh/QuadraturePoint.cpp
+  ${COMMON_SOURCE_DIR}/mf/LocalAssembly.cpp
   ${SOURCE_DIR}/GlobalAssembly.cpp
-  ${SOURCE_DIR}/AbscissaeGenerator.cpp
+  ${COMMON_SOURCE_DIR}/mesh/AbscissaeGenerator.cpp
   ${SOURCE_DIR}/ElementFEM.cpp
 )
 
