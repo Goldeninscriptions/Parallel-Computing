@@ -64,5 +64,11 @@ target_link_libraries(iter_num_fem eigenvalue_problem_lib ${PETSC_LIB})
 add_executable(mult mult.cpp)
 target_link_libraries(mult eigenvalue_problem_lib ${PETSC_LIB})
 
+add_executable(cond_1d condition_number_1d.cpp)
+target_link_libraries(cond_1d eigenvalue_problem_lib)
+
+add_executable(error_1d error_1d.cpp)
+target_link_libraries(error_1d eigenvalue_problem_lib)
+
 pc_enable_openmp_for_targets(eigenvalue_problem_lib preprocess preprocess_fem)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/message_compiler_setup.cmake)
