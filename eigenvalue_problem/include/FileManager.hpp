@@ -55,13 +55,13 @@ public:
         const int &p, const int &q,
         const double &Lx, const double &Ly,
         const int &nElemX, const int &nElemY,
-        const int &part_num_1d, const int &dim,
+        const int &part_num_x, const int &part_num_y, const int &dim,
         const std::string &base_name) const;
 
     void ReadPreprocessInfo(const std::string &filename,
         int &p, int &q, double &Lx, double &Ly,
         int &nElemX, int &nElemY,
-        int &part_num_1d, int &dim,
+        int &part_num_x, int &part_num_y, int &dim,
         std::string &base_name) const;
 
     std::string GetPartitionFilename(const std::string &base_name, const int &rank) const;

@@ -15,14 +15,14 @@
 
 int main(int argc, char *argv[])
 {
-    int p, q, nElemX, nElemY, part_num_1d, dim;
+    int p, q, nElemX, nElemY, part_num_x, part_num_y, dim;
     double Lx, Ly;
     std::string base_name;
 
     std::string file_info = "info.txt";
 
     FileManager * fm = new FileManager();
-    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_1d, dim, base_name);
+    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_x, part_num_y, dim, base_name);
 
     // for (const auto& entry : fs::directory_iterator(fs::current_path())) {
     //     if (entry.is_regular_file()) {
@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
     std::vector<double> NURBSExtraction2 = neg->GenerateExtraction1D(basis2);
 
     std::cout << "Generating partition..." << std::endl;
-    Partition * part = new Partition(part_num_1d, part_num_1d, dim, base_name);
+    Partition * part = new Partition(part_num_x, part_num_y, dim, base_name);
     part->GeneratePartition(basis1, basis2, CP, IEN, ID, NURBSExtraction1, NURBSExtraction2);
 
     delete cpg; cpg = nullptr;

@@ -12,16 +12,18 @@
 #include "IDGenerator.hpp"
 #include "Partition.hpp"
 
+#include <cstdlib>
+
 int main(int argc, char *argv[])
 {
-    int p, q, nElemX, nElemY, part_num_1d, dim;
+    int p, q, nElemX, nElemY, part_num_x, part_num_y, dim;
     double Lx, Ly;
     std::string base_name;
 
     std::string file_info = "info.txt";
 
     FileManager * fm = new FileManager();
-    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_1d, dim, base_name);
+    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_x, part_num_y, dim, base_name);
 
     std::string base_name_fem = "part_fem";
     
@@ -57,7 +59,31 @@ int main(int argc, char *argv[])
     for (int i = 0; i < q - 1; ++i) T.push_back(Ly);
 
     AbscissaeGenerator * absgen = new AbscissaeGenerator();
-    std::vector<double> CP = absgen->GenerateAbscissae2D(S, T, p-2, q-2);
+    const char * abscissa_type_env = std::getenv("PC_ABSCISSAE_TYPE");
+    const std::string abscissa_type = abscissa_type_env ? abscissa_type_env : "GREVILLE";
+    std::vector<double> abscissae1;
+    std::vector<double> abscissae2;
+
+    if (abscissa_type == "DEMKO")
+    {
+        abscissae1 = absgen->DemkoAbscissae(S, p - 2);
+        abscissae2 = absgen->DemkoAbscissae(T, q - 2);
+    }
+    else
+    {
+        abscissae1 = absgen->GrevilleAbscissae(S, p - 2);
+        abscissae2 = absgen->GrevilleAbscissae(T, q - 2);
+    }
+
+    std::vector<double> CP{};
+    for (const auto &t : abscissae2)
+    {
+        for (const auto &s : abscissae1)
+        {
+            CP.push_back(s);
+            CP.push_back(t);
+        }
+    }
 
     nElemX = nFuncX - 1;
     nElemY = nFuncY - 1;
@@ -69,7 +95,7 @@ int main(int argc, char *argv[])
     IDGenerator * idgen = new IDGenerator();
     std::vector<int> ID = idgen->GenerateID2D(nFuncX, nFuncY);
 
-    Partition * part = new Partition(part_num_1d, part_num_1d, dim, base_name_fem);
+    Partition * part = new Partition(part_num_x, part_num_y, dim, base_name_fem);
     part->GeneratePartition(nElemX, nElemY, CP, IEN, ID);
 
     delete fm; fm = nullptr;

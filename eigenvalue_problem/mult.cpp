@@ -5,14 +5,14 @@
 
 int main(int argc, char *argv[])
 {
-    int p, q, nElemX, nElemY, part_num_1d, dim;
+    int p, q, nElemX, nElemY, part_num_x, part_num_y, dim;
     double Lx, Ly;
     std::string base_name;
 
     std::string file_info = "info.txt";
 
     FileManager * fm = new FileManager();
-    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_1d, dim, base_name);
+    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_x, part_num_y, dim, base_name);
 
     PetscInitialize(&argc, &argv, NULL, NULL);
 
@@ -28,7 +28,8 @@ int main(int argc, char *argv[])
         std::cout << "Ly: " << Ly << std::endl;
         std::cout << "nElemX: " << nElemX << std::endl;
         std::cout << "nElemY: " << nElemY << std::endl;
-        std::cout << "part_num_1d: " << part_num_1d << std::endl;
+        std::cout << "part_num_x: " << part_num_x << std::endl;
+        std::cout << "part_num_y: " << part_num_y << std::endl;
         std::cout << "dim: " << dim << std::endl;
         std::cout << "base_name: " << base_name << std::endl;
     }

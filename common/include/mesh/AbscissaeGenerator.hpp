@@ -15,7 +15,7 @@ class AbscissaeGenerator
         std::vector<double> GrevilleAbscissae(
             const std::vector<double> &S, const int &p);
 
-        // std::vector<double> DemkoAbscissae(
-        //     const std::vector<double> &S, const int &p);
+        std::vector<double> DemkoAbscissae(
+            const std::vector<double> &S, const int &p);
 };
 #endif

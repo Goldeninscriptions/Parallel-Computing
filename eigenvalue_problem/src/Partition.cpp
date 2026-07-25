@@ -17,20 +17,27 @@ void Partition::GeneratePartition(const BSplineBasis * const &basis1, const BSpl
     const int extSizeY = (q + 1) * (q + 1);
     const double hx = (S.back() - S.front()) / nElemX;
     const double hy = (T.back() - T.front()) / nElemY;
+    const int num_parts = part_num_x * part_num_y;
+    const int total_owned = std::count_if(ID.begin(), ID.end(), [](int id) { return id != -1; });
 
     FileManager * fm = new FileManager();
 
-    const int part_size_x = (m % part_num_x == 0) ? m / part_num_x : m / part_num_x + 1;
-    const int part_size_y = (n % part_num_y == 0) ? n / part_num_y : n / part_num_y + 1;
-    
     std::vector<int> num_local_funcs_x(part_num_x, 0);
     std::vector<int> num_local_funcs_y(part_num_y, 0);
+    const int base_size_x = m / part_num_x;
+    const int rem_size_x = m % part_num_x;
+    const int base_size_y = n / part_num_y;
+    const int rem_size_y = n % part_num_y;
 
-    for (int i = 0; i < m; i += part_size_x) num_local_funcs_x[i/part_size_x] = part_size_x;
-    num_local_funcs_x[part_num_x - 1] = m - (part_num_x - 1) * part_size_x;
+    for (int i = 0; i < part_num_x; ++i)
+    {
+        num_local_funcs_x[i] = base_size_x + (i < rem_size_x ? 1 : 0);
+    }
 
-    for (int i = 0; i < n; i += part_size_y) num_local_funcs_y[i/part_size_y] = part_size_y;
-    num_local_funcs_y[part_num_y - 1] = n - (part_num_y - 1) * part_size_y;
+    for (int i = 0; i < part_num_y; ++i)
+    {
+        num_local_funcs_y[i] = base_size_y + (i < rem_size_y ? 1 : 0);
+    }
 
     std::vector<int> node_start_idx_x(part_num_x, 0);
     std::vector<int> node_start_idx_y(part_num_y, 0);
@@ -58,14 +65,14 @@ void Partition::GeneratePartition(const BSplineBasis * const &basis1, const BSpl
 
     for (int i = 1; i < part_num_x; ++i)
     {
-        elem_start_idx_x[i] = node_start_idx_x[i] - p/2;
+        elem_start_idx_x[i] = std::max(0, node_start_idx_x[i] - p);
         elem_end_idx_x[i - 1] = elem_start_idx_x[i] - 1;
     }
     elem_end_idx_x[part_num_x - 1] = nElemX - 1;
     
     for (int i = 1; i < part_num_y; ++i)
     {
-        elem_start_idx_y[i] = node_start_idx_y[i] - q/2;
+        elem_start_idx_y[i] = std::max(0, node_start_idx_y[i] - q);
         elem_end_idx_y[i - 1] = elem_start_idx_y[i] - 1;
     }
     elem_end_idx_y[part_num_y - 1] = nElemY - 1;
@@ -76,7 +83,7 @@ void Partition::GeneratePartition(const BSplineBasis * const &basis1, const BSpl
     {
         for (i = 0; i < part_num_x; ++i)
         {
-            int count = j * part_num_y + i;
+            int count = j * part_num_x + i;
             std::cout << "Generating partition " << count << "..." << std::endl;
 
             std::vector<double> elem_size1(elem_end_idx_x[i] - elem_start_idx_x[i] + 1, hx);
@@ -103,9 +110,7 @@ void Partition::GeneratePartition(const BSplineBasis * const &basis1, const BSpl
             {
                 for (int locali = 0; locali < num_local_funcs_x[i]; ++locali)
                 {
-                    const int globali = i * part_size_x + locali;
-                    const int globalj = j * part_size_y + localj;
-                    const int global = globalj * m + globali;
+                    const int global = (node_start_idx_y[j] + localj) * m + (node_start_idx_x[i] + locali);
                     local_to_global.push_back(global);
                 }
             }
@@ -160,7 +165,7 @@ void Partition::GeneratePartition(const BSplineBasis * const &basis1, const BSpl
                     std::back_inserter(localNURBSExtraction2));
             }
 
-            const int nlocalfunc = std::count_if(tempID.begin(), tempID.end(), [](int id) { return id != -1; });
+            const int nlocalfunc = total_owned / num_parts + (count < total_owned % num_parts ? 1 : 0);
             const int nlocalelemx = elem_end_idx_x[i] - elem_start_idx_x[i] + 1;
             const int nlocalelemy = elem_end_idx_y[j] - elem_start_idx_y[j] + 1;
 
@@ -183,18 +188,25 @@ void Partition::GeneratePartition(const int &nElemX, const int &nElemY,
     const int m = nElemX + 1;
     const int n = nElemY + 1;
     const int nLocBas = 4;
+    const int num_parts = part_num_x * part_num_y;
+    const int total_owned = std::count_if(ID.begin(), ID.end(), [](int id) { return id != -1; });
 
-    const int part_size_x = (m % part_num_x == 0) ? m / part_num_x : m / part_num_x + 1;
-    const int part_size_y = (n % part_num_y == 0) ? n / part_num_y : n / part_num_y + 1;
-    
     std::vector<int> num_local_funcs_x(part_num_x, 0);
     std::vector<int> num_local_funcs_y(part_num_y, 0);
+    const int base_size_x = m / part_num_x;
+    const int rem_size_x = m % part_num_x;
+    const int base_size_y = n / part_num_y;
+    const int rem_size_y = n % part_num_y;
 
-    for (int i = 0; i < m; i += part_size_x) num_local_funcs_x[i/part_size_x] = part_size_x;
-    num_local_funcs_x[part_num_x - 1] = m - (part_num_x - 1) * part_size_x;
+    for (int i = 0; i < part_num_x; ++i)
+    {
+        num_local_funcs_x[i] = base_size_x + (i < rem_size_x ? 1 : 0);
+    }
 
-    for (int i = 0; i < n; i += part_size_y) num_local_funcs_y[i/part_size_y] = part_size_y;
-    num_local_funcs_y[part_num_y - 1] = n - (part_num_y - 1) * part_size_y;
+    for (int i = 0; i < part_num_y; ++i)
+    {
+        num_local_funcs_y[i] = base_size_y + (i < rem_size_y ? 1 : 0);
+    }
 
     std::vector<int> node_start_idx_x(part_num_x, 0);
     std::vector<int> node_start_idx_y(part_num_y, 0);
@@ -264,9 +276,7 @@ void Partition::GeneratePartition(const int &nElemX, const int &nElemY,
             {
                 for (int locali = 0; locali < num_local_funcs_x[i]; ++locali)
                 {
-                    const int globali = i * part_size_x + locali;
-                    const int globalj = j * part_size_y + localj;
-                    const int global = globalj * m + globali;
+                    const int global = (node_start_idx_y[j] + localj) * m + (node_start_idx_x[i] + locali);
                     local_to_global.push_back(global);
                 }
             }
@@ -301,7 +311,7 @@ void Partition::GeneratePartition(const int &nElemX, const int &nElemY,
                 }
             }
 
-            const int nlocalfunc = std::count_if(tempID.begin(), tempID.end(), [](int id) { return id != -1; });
+            const int nlocalfunc = total_owned / num_parts + (count < total_owned % num_parts ? 1 : 0);
             const int nlocalelemx = elem_end_idx_x[i] - elem_start_idx_x[i] + 1;
             const int nlocalelemy = elem_end_idx_y[j] - elem_start_idx_y[j] + 1;
 

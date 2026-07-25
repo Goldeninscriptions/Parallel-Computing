@@ -313,7 +313,7 @@ void FileManager::ReadPartition(const std::string &filename,
 }
 
 void FileManager::WritePreprocessInfo(const std::string &filename, const int &p, const int &q, const double &Lx, const double &Ly,
-    const int &nElemX, const int &nElemY, const int &part_num_1d, const int &dim, const std::string &base_name) const
+    const int &nElemX, const int &nElemY, const int &part_num_x, const int &part_num_y, const int &dim, const std::string &base_name) const
 {
     std::ofstream file(filename.c_str());
     if (!file.is_open())
@@ -328,7 +328,8 @@ void FileManager::WritePreprocessInfo(const std::string &filename, const int &p,
     file << "Ly: " << Ly << std::endl;
     file << "nElemX: " << nElemX << std::endl;
     file << "nElemY: " << nElemY << std::endl;
-    file << "part_num_1d: " << part_num_1d << std::endl;
+    file << "part_num_x: " << part_num_x << std::endl;
+    file << "part_num_y: " << part_num_y << std::endl;
     file << "dim: " << dim << std::endl;
     file << "base_name: " << base_name << std::endl;
 
@@ -336,7 +337,7 @@ void FileManager::WritePreprocessInfo(const std::string &filename, const int &p,
 }
 
 void FileManager::ReadPreprocessInfo(const std::string &filename, int &p, int &q, double &Lx, double &Ly,
-    int &nElemX, int &nElemY, int &part_num_1d, int &dim, std::string &base_name) const
+    int &nElemX, int &nElemY, int &part_num_x, int &part_num_y, int &dim, std::string &base_name) const
 {
     std::ifstream file(filename.c_str());
     if (!file.is_open())
@@ -372,9 +373,19 @@ void FileManager::ReadPreprocessInfo(const std::string &filename, int &p, int &q
         {
             nElemY = std::stoi(line.substr(8));
         }
+        else if (line.find("part_num_x: ") != std::string::npos)
+        {
+            part_num_x = std::stoi(line.substr(12));
+        }
+        else if (line.find("part_num_y: ") != std::string::npos)
+        {
+            part_num_y = std::stoi(line.substr(12));
+        }
         else if (line.find("part_num_1d: ") != std::string::npos)
         {
-            part_num_1d = std::stoi(line.substr(13));
+            const int part_num_1d = std::stoi(line.substr(13));
+            part_num_x = part_num_1d;
+            part_num_y = part_num_1d;
         }
         else if (line.find("dim: ") != std::string::npos)
         {
@@ -384,6 +395,12 @@ void FileManager::ReadPreprocessInfo(const std::string &filename, int &p, int &q
         {
             base_name = line.substr(11);
         }
+    }
+
+    if (part_num_x <= 0 || part_num_y <= 0)
+    {
+        std::cerr << "Error: invalid partition counts in " << filename << std::endl;
+        exit(1);
     }
 }
 

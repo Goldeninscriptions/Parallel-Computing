@@ -178,14 +178,14 @@ void MyMatMultK(Mat M, Vec x, Vec y)
 
 int main(int argc, char *argv[])
 {
-    int p, q, nElemX, nElemY, part_num_1d, dim;
+    int p, q, nElemX, nElemY, part_num_x, part_num_y, dim;
     double Lx, Ly;
     std::string base_name;
 
     std::string file_info = "info.txt";
 
     FileManager * fm = new FileManager();
-    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_1d, dim, base_name);
+    fm->ReadPreprocessInfo(file_info, p, q, Lx, Ly, nElemX, nElemY, part_num_x, part_num_y, dim, base_name);
 
     SlepcInitialize(&argc, &argv, NULL, NULL);
 
@@ -201,7 +201,8 @@ int main(int argc, char *argv[])
         std::cout << "Ly: " << Ly << std::endl;
         std::cout << "nElemX: " << nElemX << std::endl;
         std::cout << "nElemY: " << nElemY << std::endl;
-        std::cout << "part_num_1d: " << part_num_1d << std::endl;
+        std::cout << "part_num_x: " << part_num_x << std::endl;
+        std::cout << "part_num_y: " << part_num_y << std::endl;
         std::cout << "dim: " << dim << std::endl;
         std::cout << "base_name: " << base_name << std::endl;
     }
@@ -292,6 +293,7 @@ int main(int argc, char *argv[])
     PetscReal tol = 1e-10;
     PetscInt max_it = 10000;
     SVDSetTolerances(svd, tol, max_it);
+    SVDSetFromOptions(svd);
 
     SVDSetDimensions(svd, 1, PETSC_DEFAULT, PETSC_DEFAULT);
 
@@ -332,6 +334,7 @@ int main(int argc, char *argv[])
     SVDSetProblemType(svd_inv, SVD_STANDARD);
     SVDSetType(svd_inv, SVDTRLANCZOS);
     SVDSetTolerances(svd_inv, tol, max_it);
+    SVDSetFromOptions(svd_inv);
 
     SVDSetDimensions(svd_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
     SVDSetWhichSingularTriplets(svd_inv, SVD_LARGEST);
@@ -350,6 +353,65 @@ int main(int argc, char *argv[])
     KSPDestroy(&ksp_inv);
     SVDDestroy(&svd_inv);
 
+    // Compute the condition number of the low-order FEM matrix itself
+    SVD svd_fem;
+    SVDCreate(PETSC_COMM_WORLD, &svd_fem);
+    SVDSetOperators(svd_fem, globalassem_fem->K, NULL);
+    SVDSetProblemType(svd_fem, SVD_STANDARD);
+    SVDSetType(svd_fem, SVDTRLANCZOS);
+    SVDSetTolerances(svd_fem, tol, max_it);
+    SVDSetDimensions(svd_fem, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+    SVDSetWhichSingularTriplets(svd_fem, SVD_LARGEST);
+    SVDSetFromOptions(svd_fem);
+    SVDSolve(svd_fem);
+
+    SVDGetConvergedReason(svd_fem, &reason);
+    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+
+    PetscReal smax_fem;
+    SVDGetSingularTriplet(svd_fem, 0, &smax_fem, NULL, NULL);
+    SVDDestroy(&svd_fem);
+
+    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of Kfem: %.15g\n", smax_fem);
+
+    KSP ksp_fem_inv;
+    KSPCreate(PETSC_COMM_WORLD, &ksp_fem_inv);
+    KSPSetOperators(ksp_fem_inv, globalassem_fem->K, globalassem_fem->K);
+    KSPSetFromOptions(ksp_fem_inv);
+    KSPSetTolerances(ksp_fem_inv, rtol, abstol, divtol, maxits);
+
+    UserCtxK ctx_fem_inv;
+    ctx_fem_inv.ksp = ksp_fem_inv;
+    Mat M_fem_inv;
+    PetscInt mm_fem, nn_fem;
+    MatGetSize(globalassem_fem->K, &mm_fem, &nn_fem);
+    MatCreateShell(PETSC_COMM_WORLD, nlocalfunc_fem, nlocalfunc_fem, mm_fem, nn_fem, &ctx_fem_inv, &M_fem_inv);
+    MatShellSetOperation(M_fem_inv, MATOP_MULT, (void(*)(void))MyMatMultK);
+    MatShellSetOperation(M_fem_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultK);
+
+    SVD svd_fem_inv;
+    SVDCreate(PETSC_COMM_WORLD, &svd_fem_inv);
+    SVDSetOperators(svd_fem_inv, M_fem_inv, NULL);
+    SVDSetProblemType(svd_fem_inv, SVD_STANDARD);
+    SVDSetType(svd_fem_inv, SVDTRLANCZOS);
+    SVDSetTolerances(svd_fem_inv, tol, max_it);
+    SVDSetDimensions(svd_fem_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+    SVDSetWhichSingularTriplets(svd_fem_inv, SVD_LARGEST);
+    SVDSetFromOptions(svd_fem_inv);
+    SVDSolve(svd_fem_inv);
+
+    SVDGetConvergedReason(svd_fem_inv, &reason);
+    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+
+    PetscReal smax_fem_inv;
+    SVDGetSingularTriplet(svd_fem_inv, 0, &smax_fem_inv, NULL, NULL);
+    MatDestroy(&M_fem_inv);
+    KSPDestroy(&ksp_fem_inv);
+    SVDDestroy(&svd_fem_inv);
+
+    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfem: %.15g\n", 1/smax_fem_inv);
+    PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfem: %.15g\n", smax_fem * smax_fem_inv);
+
     // Compute the maximum singular value of K
     SVD svd_K;
     SVDCreate(PETSC_COMM_WORLD, &svd_K);
@@ -357,6 +419,7 @@ int main(int argc, char *argv[])
     SVDSetProblemType(svd_K, SVD_STANDARD);
     SVDSetType(svd_K, SVDTRLANCZOS);
     SVDSetTolerances(svd_K, tol, max_it);
+    SVDSetFromOptions(svd_K);
 
     SVDSetDimensions(svd_K, 1, PETSC_DEFAULT, PETSC_DEFAULT);
     SVDSetWhichSingularTriplets(svd_K, SVD_LARGEST);
@@ -392,6 +455,7 @@ int main(int argc, char *argv[])
     SVDSetProblemType(svd_K_inv, SVD_STANDARD);
     SVDSetType(svd_K_inv, SVDTRLANCZOS);
     SVDSetTolerances(svd_K_inv, tol, max_it);
+    SVDSetFromOptions(svd_K_inv);
 
     SVDSetDimensions(svd_K_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
     SVDSetWhichSingularTriplets(svd_K_inv, SVD_LARGEST);
