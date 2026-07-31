@@ -68,9 +68,11 @@ function(pc_set_default_build_flags)
   endif()
 
   if(NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 11 PARENT_SCOPE)
+    set(CMAKE_CXX_STANDARD 17 PARENT_SCOPE)
   endif()
   set(CMAKE_CXX_STANDARD_REQUIRED TRUE PARENT_SCOPE)
+  set(CMAKE_CUDA_STANDARD 17 PARENT_SCOPE)
+  set(CMAKE_CUDA_STANDARD_REQUIRED TRUE PARENT_SCOPE)
 
   if(CMAKE_BUILD_TYPE MATCHES "Release")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall" PARENT_SCOPE)
@@ -188,7 +190,7 @@ function(pc_configure_cuda_targets)
   foreach(_target IN LISTS ARGN)
     if(TARGET "${_target}")
       set_target_properties("${_target}" PROPERTIES
-        CUDA_STANDARD 11
+        CUDA_STANDARD 17
         CUDA_STANDARD_REQUIRED YES
         CUDA_SEPARABLE_COMPILATION ON
       )
