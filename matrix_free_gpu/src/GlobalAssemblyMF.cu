@@ -92,6 +92,13 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
     CopyToDevice(qw1, w1.data(), nqp1);
     CopyToDevice(qw2, w2.data(), nqp2);
 
+    int * d_Dir = nullptr;
+    if (!Dir.empty())
+    {
+        MallocDeviceMemory(&d_Dir, Dir.size());
+        CopyToDevice(d_Dir, Dir.data(), Dir.size());
+    }
+
     VecSet(F, 0.0);
     double *d_F_array;
     VecCUDAGetArray(F, &d_F_array);
@@ -104,7 +111,8 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
         d_IEN, d_ID, d_CP,
         qw1, qw2, d_F_array);
     
-    DirichletBCCUDA(Dir.data(), static_cast<int>(Dir.size()), d_F_array, 0.0);
+    if (d_Dir != nullptr)
+        DirichletBCCUDA(d_Dir, static_cast<int>(Dir.size()), d_F_array, 0.0);
 
     VecCUDARestoreArray(F, &d_F_array);
 
@@ -121,6 +129,7 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
     FreeDeviceMemory(d_elem_size2);
     FreeDeviceMemory(qw1);
     FreeDeviceMemory(qw2);
+    FreeDeviceMemory(d_Dir);
 }
 
 void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
@@ -207,6 +216,13 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
     CopyToDevice(qw1, w1.data(), nqp1);
     CopyToDevice(qw2, w2.data(), nqp2);
 
+    int * d_Dir = nullptr;
+    if (!Dir.empty())
+    {
+        MallocDeviceMemory(&d_Dir, Dir.size());
+        CopyToDevice(d_Dir, Dir.data(), Dir.size());
+    }
+
     VecSet(y, 0.0);
     const double *d_x_array;
     double *d_y_array;
@@ -221,7 +237,8 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
         d_IEN, d_ID, d_CP,
         qw1, qw2, d_x_array, d_y_array);
 
-    DirichletBCCUDA(Dir.data(), static_cast<int>(Dir.size()), d_y_array, 0.0);
+    if (d_Dir != nullptr)
+        DirichletBCCUDA(d_Dir, static_cast<int>(Dir.size()), d_y_array, 0.0);
     
     VecCUDARestoreArrayRead(x, &d_x_array);
     VecCUDARestoreArray(y, &d_y_array);
@@ -239,4 +256,5 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
     FreeDeviceMemory(d_elem_size2);
     FreeDeviceMemory(qw1);
     FreeDeviceMemory(qw2);
+    FreeDeviceMemory(d_Dir);
 }
