@@ -8,7 +8,7 @@
 class ElementMFSF
 {
     public:
-        ElementMFSF(const double &p, const double &q) : p(p), q(q), nLocBas((p+1)*(q+1)) {}
+        ElementMFSF(const int &p, const int &q) : p(p), q(q), nLocBas((p+1)*(q+1)) {}
         ~ElementMFSF(){}
 
         void SetElement(const std::vector<double> &extraction1,
@@ -62,8 +62,8 @@ class ElementMFSF
             std::vector<double> &dW_dx, std::vector<double> &dW_dy) const;
     
     private:
-        const double p;
-        const double q;
+        const int p;
+        const int q;
         const int nLocBas;
 
         std::vector<double> extraction1{};
