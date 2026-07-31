@@ -83,6 +83,8 @@ int main(int argc, char *argv[])
     delete elemmf;
     delete fm;
 
+    VecDestroy(&u);
+
     PetscFinalize();
     return 0;
 }
