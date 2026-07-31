@@ -117,6 +117,13 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
     CopyToDevice(d_xelemIdx, xelemIdx.data(), xelemIdx.size());
     CopyToDevice(d_yelemIdx, yelemIdx.data(), yelemIdx.size());
 
+    int * d_Dir = nullptr;
+    if (!Dir.empty())
+    {
+        MallocDeviceMemory(&d_Dir, Dir.size());
+        CopyToDevice(d_Dir, Dir.data(), Dir.size());
+    }
+
     VecSet(F, 0.0);
     double *d_F_array;
     VecCUDAGetArray(F, &d_F_array);
@@ -133,7 +140,8 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
         d_xelemIdx, d_yelemIdx, 
         d_F_array);
     
-    DirichletBCCUDA(Dir.data(), static_cast<int>(Dir.size()), d_F_array, 0.0);
+    if (d_Dir != nullptr)
+        DirichletBCCUDA(d_Dir, static_cast<int>(Dir.size()), d_F_array, 0.0);
 
     VecCUDARestoreArray(F, &d_F_array);
 
@@ -156,6 +164,7 @@ void GlobalAssemblyMF::AssemLoad(QuadraturePoint * const &quad1,
     FreeDeviceMemory(d_invlm_baseIdx);
     FreeDeviceMemory(d_xelemIdx);
     FreeDeviceMemory(d_yelemIdx);
+    FreeDeviceMemory(d_Dir);
 }
 
 void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
@@ -267,6 +276,13 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
     CopyToDevice(d_xelemIdx, xelemIdx.data(), xelemIdx.size());
     CopyToDevice(d_yelemIdx, yelemIdx.data(), yelemIdx.size());
 
+    int * d_Dir = nullptr;
+    if (!Dir.empty())
+    {
+        MallocDeviceMemory(&d_Dir, Dir.size());
+        CopyToDevice(d_Dir, Dir.data(), Dir.size());
+    }
+
     VecSet(y, 0.0);
     const double *d_x_array;
     double *d_y_array;
@@ -285,7 +301,8 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
         d_xelemIdx, d_yelemIdx,
         d_x_array, d_y_array);
 
-    DirichletBCCUDA(Dir.data(), static_cast<int>(Dir.size()), d_y_array, 0.0);
+    if (d_Dir != nullptr)
+        DirichletBCCUDA(d_Dir, static_cast<int>(Dir.size()), d_y_array, 0.0);
     
     VecCUDARestoreArrayRead(x, &d_x_array);
     VecCUDARestoreArray(y, &d_y_array);
@@ -307,4 +324,7 @@ void GlobalAssemblyMF::MatMulMF(QuadraturePoint * const &quad1,
     FreeDeviceMemory(d_invlm_offset);
     FreeDeviceMemory(d_invlm_elemIdx);
     FreeDeviceMemory(d_invlm_baseIdx);
+    FreeDeviceMemory(d_xelemIdx);
+    FreeDeviceMemory(d_yelemIdx);
+    FreeDeviceMemory(d_Dir);
 }
