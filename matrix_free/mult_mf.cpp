@@ -3,14 +3,9 @@
 #include "FileManager.hpp"
 #include "GlobalAssemblyMF.hpp"
 #include "GlobalAssembly.hpp"
-#include "MatrixFreeMode.hpp"
 
 int main(int argc, char *argv[])
 {
-    MatrixFreeMode mode = MatrixFreeMode::MF;
-    if (!ParseMatrixFreeMode(argc, argv, mode))
-        return 0;
-
     int p, q, nElemX, nElemY, part_num_1d, dim;
     double Lx, Ly;
     std::string base_name;
@@ -37,7 +32,6 @@ int main(int argc, char *argv[])
         std::cout << "part_num_1d: " << part_num_1d << std::endl;
         std::cout << "dim: " << dim << std::endl;
         std::cout << "base_name: " << base_name << std::endl;
-        std::cout << "matrix_free_mode: " << MatrixFreeModeName(mode) << std::endl;
     }
 
     int nlocalfunc;
@@ -60,64 +54,32 @@ int main(int argc, char *argv[])
         CP, ID, ghostID, Dir, IEN,
         NURBSExtraction1, NURBSExtraction2);
 
-    if (mode == MatrixFreeMode::MF)
-    {
-        ElementMF * elem = new ElementMF(p, q);
-        LocalAssemblyMF * locassem = new LocalAssemblyMF(p, q);
-        GlobalAssemblyMF * globalassem = new GlobalAssemblyMF(elem->GetNumLocalBasis(),
-            nlocalfunc, nlocalelemx, nlocalelemy, ghostID);
+    ElementMF * elem = new ElementMF(p, q);
+    LocalAssemblyMF * locassem = new LocalAssemblyMF(p, q);
+    GlobalAssemblyMF * globalassem = new GlobalAssemblyMF(elem->GetNumLocalBasis(),
+        nlocalfunc, nlocalelemx, nlocalelemy, ghostID);
 
-        globalassem->AssemLoad(locassem, IEN,
-            ID, Dir, CP,
-            NURBSExtraction1, NURBSExtraction2,
-            elem_size1, elem_size2, elem);
+    globalassem->AssemLoad(locassem, IEN,
+        ID, Dir, CP,
+        NURBSExtraction1, NURBSExtraction2,
+        elem_size1, elem_size2, elem);
 
-        MPI_Barrier(PETSC_COMM_WORLD);
+    MPI_Barrier(PETSC_COMM_WORLD);
 
         Vec u;
         VecDuplicate(globalassem->F, &u);
         VecSet(u, 0.0);
 
-        globalassem->MatMulMF(locassem,
-            IEN, ID, Dir, CP,
-            NURBSExtraction1, NURBSExtraction2,
-            elem_size1, elem_size2,
+    globalassem->MatMulMF(locassem,
+        IEN, ID, Dir, CP,
+        NURBSExtraction1, NURBSExtraction2,
+        elem_size1, elem_size2,
             elem, globalassem->F, u);
 
-        VecDestroy(&u);
-        delete globalassem;
-        delete locassem;
-        delete elem;
-    }
-    else
-    {
-        ElementMFSF * elem = new ElementMFSF(p, q);
-        LocalAssemblyMFSF * locassem = new LocalAssemblyMFSF(p, q);
-        GlobalAssemblyMF * globalassem = new GlobalAssemblyMF(elem->GetNumLocalBasis(),
-            nlocalfunc, nlocalelemx, nlocalelemy, ghostID);
-
-        globalassem->AssemLoad(locassem, IEN,
-            ID, Dir, CP,
-            NURBSExtraction1, NURBSExtraction2,
-            elem_size1, elem_size2, elem);
-
-        MPI_Barrier(PETSC_COMM_WORLD);
-
-        Vec u;
-        VecDuplicate(globalassem->F, &u);
-        VecSet(u, 0.0);
-
-        globalassem->MatMulMF(locassem,
-            IEN, ID, Dir, CP,
-            NURBSExtraction1, NURBSExtraction2,
-            elem_size1, elem_size2,
-            elem, globalassem->F, u);
-
-        VecDestroy(&u);
-        delete globalassem;
-        delete locassem;
-        delete elem;
-    }
+    VecDestroy(&u);
+    delete globalassem;
+    delete locassem;
+    delete elem;
 
     delete fm;
 
