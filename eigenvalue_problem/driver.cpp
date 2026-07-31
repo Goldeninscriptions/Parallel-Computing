@@ -1,4 +1,6 @@
 #include <petscksp.h>
+#include <slepceps.h>
+#include <slepcmath.h>
 #include <slepcsvd.h>
 #include "FileManager.hpp"
 #include "GlobalAssembly.hpp"
@@ -144,6 +146,148 @@ typedef struct
     KSP ksp;
 } UserCtxK;
 
+PetscReal ComputeExtremeSingularValue(Mat A, SVDWhich which, PetscReal tol, PetscInt max_it);
+PetscReal ComputeExtremeEigenvalue(Mat A, EPSWhich which, PetscReal tol, PetscInt max_it);
+
+enum class SpectralMethod
+{
+    SVD,
+    EPS
+};
+
+void PrintUnavailable(const char *matrix_name)
+{
+    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of %s: unavailable\n", matrix_name);
+    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of %s: unavailable\n", matrix_name);
+    PetscPrintf(PETSC_COMM_WORLD, "Condition number of %s: unavailable\n", matrix_name);
+}
+
+void AnalyzeWithEPS(Mat A_neg, const char *matrix_name, PetscReal tol, PetscInt max_it)
+{
+    PetscReal lmax = ComputeExtremeEigenvalue(A_neg, EPS_LARGEST_REAL, tol, max_it);
+    PetscPrintf(PETSC_COMM_WORLD, "Maximum eigenvalue of -%s: %.15g\n", matrix_name, lmax);
+
+    PetscReal lmin = ComputeExtremeEigenvalue(A_neg, EPS_SMALLEST_REAL, tol, max_it);
+    if (lmin == PETSC_MAX_REAL)
+    {
+        PetscPrintf(PETSC_COMM_WORLD, "Minimum eigenvalue of -%s: unavailable\n", matrix_name);
+        PrintUnavailable(matrix_name);
+        return;
+    }
+
+    PetscPrintf(PETSC_COMM_WORLD, "Minimum eigenvalue of -%s: %.15g\n", matrix_name, lmin);
+    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of %s: %.15g\n", matrix_name, lmax);
+    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of %s: %.15g\n", matrix_name, lmin);
+    PetscPrintf(PETSC_COMM_WORLD, "Condition number of %s: %.15g\n", matrix_name, lmax / lmin);
+}
+
+PetscReal ComputeExtremeSingularValue(Mat A, SVDWhich which, PetscReal tol, PetscInt max_it)
+{
+    SVD svd;
+    SVDCreate(PETSC_COMM_WORLD, &svd);
+    SVDSetOperators(svd, A, NULL);
+    SVDSetProblemType(svd, SVD_STANDARD);
+    SVDSetType(svd, SVDTRLANCZOS);
+    SVDTRLanczosSetOneSide(svd, PETSC_FALSE);
+    SVDSetTolerances(svd, tol, max_it);
+    if (which == SVD_SMALLEST)
+    {
+        /*
+         * TRLanczos requires ncv <= nsv + mpd. Since nsv=1 here, choose a
+         * larger-but-valid subspace to help the smallest singular value solve
+         * without triggering setup errors.
+         */
+        SVDSetDimensions(svd, 1, 25, 24);
+    }
+    else
+    {
+        SVDSetDimensions(svd, 1, 17, 16);
+    }
+
+    SVDSetFromOptions(svd);
+    SVDSetWhichSingularTriplets(svd, which);
+    SVDSolve(svd);
+
+    SVDConvergedReason reason;
+    SVDGetConvergedReason(svd, &reason);
+    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+
+    PetscReal sigma = 0.0;
+    PetscInt nconv = 0;
+    SVDGetConverged(svd, &nconv);
+    if (nconv < 1)
+    {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "No singular triplet converged for which=%d; skip singular value extraction.\n",
+            (int)which);
+        sigma = PETSC_MAX_REAL;
+    }
+    else
+    {
+        SVDGetSingularTriplet(svd, 0, &sigma, NULL, NULL);
+    }
+
+    SVDDestroy(&svd);
+    return sigma;
+}
+
+PetscReal ComputeExtremeEigenvalue(Mat A, EPSWhich which, PetscReal tol, PetscInt max_it)
+{
+    EPS eps;
+    EPSCreate(PETSC_COMM_WORLD, &eps);
+    EPSSetOperators(eps, A, NULL);
+    EPSSetProblemType(eps, EPS_HEP);
+    EPSSetType(eps, EPSKRYLOVSCHUR);
+    EPSSetTolerances(eps, tol, max_it);
+    if (which == EPS_SMALLEST_REAL)
+    {
+        /*
+         * Krylov-Schur requires ncv <= nev + mpd. Since nev=1 here, use a
+         * larger-but-valid search space for the smallest eigenvalue solve.
+         */
+        EPSSetDimensions(eps, 1, 31, 30);
+        EPSSetTarget(eps, 0.0);
+        EPSSetWhichEigenpairs(eps, EPS_TARGET_REAL);
+
+        ST st;
+        EPSGetST(eps, &st);
+        STSetType(st, STSINVERT);
+        STSetShift(st, 0.0);
+    }
+    else
+    {
+        EPSSetDimensions(eps, 1, 31, 30);
+        EPSSetWhichEigenpairs(eps, which);
+    }
+
+    EPSSetFromOptions(eps);
+    EPSSolve(eps);
+
+    EPSConvergedReason reason;
+    EPSGetConvergedReason(eps, &reason);
+    PetscPrintf(PETSC_COMM_WORLD, "EPS convergence reason: %d\n", reason);
+
+    PetscReal lambda = 0.0;
+    PetscInt nconv = 0;
+    EPSGetConverged(eps, &nconv);
+    if (nconv < 1)
+    {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "No eigenpair converged for which=%d; skip eigenvalue extraction.\n",
+            (int)which);
+        lambda = PETSC_MAX_REAL;
+    }
+    else
+    {
+        PetscScalar eig;
+        EPSGetEigenvalue(eps, 0, &eig, NULL);
+        lambda = PetscRealPart(eig);
+    }
+
+    EPSDestroy(&eps);
+    return lambda;
+}
+
 void MyMatMult(Mat M, Vec x, Vec y)
 {
     UserCtx *ctx;
@@ -193,6 +337,29 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     MPI_Comm_size(PETSC_COMM_WORLD, &size);
 
+    char spectral_method_name[16] = "eps";
+    PetscBool method_set = PETSC_FALSE;
+    PetscOptionsGetString(NULL, NULL, "-spectral_method",
+        spectral_method_name, sizeof(spectral_method_name), &method_set);
+
+    SpectralMethod spectral_method = SpectralMethod::EPS;
+    if (std::string(spectral_method_name) == "svd")
+    {
+        spectral_method = SpectralMethod::SVD;
+    }
+    else if (std::string(spectral_method_name) == "eps")
+    {
+        spectral_method = SpectralMethod::EPS;
+    }
+    else
+    {
+        SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG,
+            "Unsupported -spectral_method value. Use 'svd' or 'eps'.");
+    }
+
+    PetscBool svd_skip_kfull = PETSC_FALSE;
+    PetscOptionsGetBool(NULL, NULL, "-svd_skip_kfull", &svd_skip_kfull, NULL);
+
     if (rank == 0)
     {
         std::cout << "p: " << p << std::endl;
@@ -205,6 +372,8 @@ int main(int argc, char *argv[])
         std::cout << "part_num_y: " << part_num_y << std::endl;
         std::cout << "dim: " << dim << std::endl;
         std::cout << "base_name: " << base_name << std::endl;
+        std::cout << "spectral_method: " << spectral_method_name << std::endl;
+        std::cout << "svd_skip_kfull: " << (svd_skip_kfull ? "true" : "false") << std::endl;
     }
 
     std::vector<double> CP;
@@ -263,216 +432,266 @@ int main(int argc, char *argv[])
     MPI_Barrier(PETSC_COMM_WORLD);
     PetscPrintf(PETSC_COMM_WORLD, "Assembling stiffness matrix and load vector...done\n");
 
-    // Compute the maximum singular value
-    KSP ksp;
-    KSPCreate(PETSC_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, globalassem_fem->K, globalassem_fem->K);
-    KSPSetFromOptions(ksp);
-    PetscReal rtol = 1e-10;
-    PetscReal abstol = 1e-10;
-    PetscReal divtol = 1e4;
-    PetscInt maxits = 10000;
-    KSPSetTolerances(ksp, rtol, abstol, divtol, maxits);
-
-    UserCtx ctx;
-    ctx.ksp = ksp;
-    ctx.K = globalassem->K;
-    Mat M;
-    PetscInt mm, nn;
-    MatGetSize(globalassem->K, &mm, &nn);
-    MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx, &M);
-    MatShellSetOperation(M, MATOP_MULT, (void(*)(void))MyMatMult);
-    MatShellSetOperation(M, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultTranspose);
-
-    SVD svd;
-    SVDCreate(PETSC_COMM_WORLD, &svd);
-    SVDSetOperators(svd, M, NULL);
-    SVDSetProblemType(svd, SVD_STANDARD);
-    SVDSetType(svd, SVDTRLANCZOS);
-
     PetscReal tol = 1e-10;
-    PetscInt max_it = 10000;
-    SVDSetTolerances(svd, tol, max_it);
-    SVDSetFromOptions(svd);
+    PetscInt max_it = 50000;
+    if (spectral_method == SpectralMethod::SVD)
+    {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "Using SVD spectral analysis for Kfull, Kfem, and K.\n");
 
-    SVDSetDimensions(svd, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+        PetscReal rtol = 1e-10, abstol = PETSC_DEFAULT, divtol = PETSC_DEFAULT;
+        PetscInt maxits = PETSC_DEFAULT;
 
-    SVDSetWhichSingularTriplets(svd, SVD_LARGEST);
-    SVDSolve(svd);
+        UserCtx ctx;
+        KSP ksp;
+        KSPCreate(PETSC_COMM_WORLD, &ksp);
+        KSPSetOperators(ksp, globalassem_fem->K, globalassem_fem->K);
+        KSPSetFromOptions(ksp);
+        KSPSetTolerances(ksp, rtol, abstol, divtol, maxits);
+        ctx.ksp = ksp;
+        ctx.K = globalassem->K;
 
-    SVDConvergedReason reason;
-    SVDGetConvergedReason(svd, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+        SVDConvergedReason reason;
 
-    PetscReal smax;
-    SVDGetSingularTriplet(svd, 0, &smax, NULL, NULL);
+        if (!svd_skip_kfull)
+        {
+            PetscInt mm, nn;
+            MatGetSize(globalassem->K, &mm, &nn);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of Kfull: %.15g\n", smax);
+            Mat M;
+            MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx, &M);
+            MatShellSetOperation(M, MATOP_MULT, (void(*)(void))MyMatMult);
+            MatShellSetOperation(M, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultTranspose);
 
-    MatDestroy(&M);
-    KSPDestroy(&ksp);
-    SVDDestroy(&svd);
+            SVD svd;
+            SVDCreate(PETSC_COMM_WORLD, &svd);
+            SVDSetOperators(svd, M, NULL);
+            SVDSetProblemType(svd, SVD_STANDARD);
+            SVDSetType(svd, SVDTRLANCZOS);
+            SVDSetTolerances(svd, tol, max_it);
+            SVDSetFromOptions(svd);
+            SVDSetDimensions(svd, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+            SVDSetWhichSingularTriplets(svd, SVD_LARGEST);
+            SVDSolve(svd);
 
-    // Compute the minimum singular value
-    KSP ksp_inv;
-    KSPCreate(PETSC_COMM_WORLD, &ksp_inv);
-    KSPSetOperators(ksp_inv, globalassem->K, globalassem->K);
-    KSPSetFromOptions(ksp_inv);
-    KSPSetTolerances(ksp_inv, rtol, abstol, divtol, maxits);
-    
-    UserCtx ctx_inv;
-    ctx_inv.ksp = ksp_inv;
-    ctx_inv.K = globalassem_fem->K;
-    Mat M_inv;
-    MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx_inv, &M_inv);
-    MatShellSetOperation(M_inv, MATOP_MULT, (void(*)(void))MyMatMult);
-    MatShellSetOperation(M_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultTranspose);
+            SVDGetConvergedReason(svd, &reason);
+            PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    SVD svd_inv;
-    SVDCreate(PETSC_COMM_WORLD, &svd_inv);
-    SVDSetOperators(svd_inv, M_inv, NULL);
-    SVDSetProblemType(svd_inv, SVD_STANDARD);
-    SVDSetType(svd_inv, SVDTRLANCZOS);
-    SVDSetTolerances(svd_inv, tol, max_it);
-    SVDSetFromOptions(svd_inv);
+            PetscReal smax = 0.0;
+            SVDGetSingularTriplet(svd, 0, &smax, NULL, NULL);
+            PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of Kfull: %.15g\n", smax);
 
-    SVDSetDimensions(svd_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
-    SVDSetWhichSingularTriplets(svd_inv, SVD_LARGEST);
-    SVDSolve(svd_inv);
+            SVDDestroy(&svd);
 
-    SVDGetConvergedReason(svd_inv, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+            KSP ksp_inv;
+            KSPCreate(PETSC_COMM_WORLD, &ksp_inv);
+            KSPSetOperators(ksp_inv, globalassem->K, globalassem->K);
+            KSPSetFromOptions(ksp_inv);
+            KSPSetTolerances(ksp_inv, rtol, abstol, divtol, maxits);
 
-    PetscReal smin;
-    SVDGetSingularTriplet(svd_inv, 0, &smin, NULL, NULL);
+            UserCtx ctx_inv;
+            ctx_inv.ksp = ksp_inv;
+            ctx_inv.K = globalassem_fem->K;
+            Mat M_inv;
+            MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx_inv, &M_inv);
+            MatShellSetOperation(M_inv, MATOP_MULT, (void(*)(void))MyMatMult);
+            MatShellSetOperation(M_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultTranspose);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfull: %.15g\n", 1/smin);
-    PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfull: %.15g\n", smax*smin);
+            SVD svd_inv;
+            SVDCreate(PETSC_COMM_WORLD, &svd_inv);
+            SVDSetOperators(svd_inv, M_inv, NULL);
+            SVDSetProblemType(svd_inv, SVD_STANDARD);
+            SVDSetType(svd_inv, SVDTRLANCZOS);
+            SVDSetTolerances(svd_inv, tol, max_it);
+            SVDSetFromOptions(svd_inv);
+            SVDSetDimensions(svd_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+            SVDSetWhichSingularTriplets(svd_inv, SVD_LARGEST);
+            SVDSolve(svd_inv);
 
-    MatDestroy(&M_inv);
-    KSPDestroy(&ksp_inv);
-    SVDDestroy(&svd_inv);
+            SVDGetConvergedReason(svd_inv, &reason);
+            PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    // Compute the condition number of the low-order FEM matrix itself
-    SVD svd_fem;
-    SVDCreate(PETSC_COMM_WORLD, &svd_fem);
-    SVDSetOperators(svd_fem, globalassem_fem->K, NULL);
-    SVDSetProblemType(svd_fem, SVD_STANDARD);
-    SVDSetType(svd_fem, SVDTRLANCZOS);
-    SVDSetTolerances(svd_fem, tol, max_it);
-    SVDSetDimensions(svd_fem, 1, PETSC_DEFAULT, PETSC_DEFAULT);
-    SVDSetWhichSingularTriplets(svd_fem, SVD_LARGEST);
-    SVDSetFromOptions(svd_fem);
-    SVDSolve(svd_fem);
+            PetscReal smax_inv = 0.0;
+            SVDGetSingularTriplet(svd_inv, 0, &smax_inv, NULL, NULL);
+            PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfull: %.15g\n", 1.0 / smax_inv);
+            PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfull: %.15g\n", smax * smax_inv);
 
-    SVDGetConvergedReason(svd_fem, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+            SVDDestroy(&svd_inv);
+            MatDestroy(&M_inv);
+            KSPDestroy(&ksp_inv);
+            MatDestroy(&M);
+        }
+        else
+        {
+            PetscPrintf(PETSC_COMM_WORLD,
+                "Skipping Kfull in SVD mode because -svd_skip_kfull true was requested.\n");
+        }
 
-    PetscReal smax_fem;
-    SVDGetSingularTriplet(svd_fem, 0, &smax_fem, NULL, NULL);
-    SVDDestroy(&svd_fem);
+        PetscInt mm_fem, nn_fem;
+        MatGetSize(globalassem_fem->K, &mm_fem, &nn_fem);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of Kfem: %.15g\n", smax_fem);
+        SVD svd_fem;
+        SVDCreate(PETSC_COMM_WORLD, &svd_fem);
+        SVDSetOperators(svd_fem, globalassem_fem->K, NULL);
+        SVDSetProblemType(svd_fem, SVD_STANDARD);
+        SVDSetType(svd_fem, SVDTRLANCZOS);
+        SVDSetTolerances(svd_fem, tol, max_it);
+        SVDSetFromOptions(svd_fem);
+        SVDSetDimensions(svd_fem, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+        SVDSetWhichSingularTriplets(svd_fem, SVD_LARGEST);
+        SVDSolve(svd_fem);
 
-    KSP ksp_fem_inv;
-    KSPCreate(PETSC_COMM_WORLD, &ksp_fem_inv);
-    KSPSetOperators(ksp_fem_inv, globalassem_fem->K, globalassem_fem->K);
-    KSPSetFromOptions(ksp_fem_inv);
-    KSPSetTolerances(ksp_fem_inv, rtol, abstol, divtol, maxits);
+        SVDGetConvergedReason(svd_fem, &reason);
+        PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    UserCtxK ctx_fem_inv;
-    ctx_fem_inv.ksp = ksp_fem_inv;
-    Mat M_fem_inv;
-    PetscInt mm_fem, nn_fem;
-    MatGetSize(globalassem_fem->K, &mm_fem, &nn_fem);
-    MatCreateShell(PETSC_COMM_WORLD, nlocalfunc_fem, nlocalfunc_fem, mm_fem, nn_fem, &ctx_fem_inv, &M_fem_inv);
-    MatShellSetOperation(M_fem_inv, MATOP_MULT, (void(*)(void))MyMatMultK);
-    MatShellSetOperation(M_fem_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultK);
+        PetscReal smax_fem = 0.0;
+        SVDGetSingularTriplet(svd_fem, 0, &smax_fem, NULL, NULL);
+        PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of Kfem: %.15g\n", smax_fem);
+        SVDDestroy(&svd_fem);
 
-    SVD svd_fem_inv;
-    SVDCreate(PETSC_COMM_WORLD, &svd_fem_inv);
-    SVDSetOperators(svd_fem_inv, M_fem_inv, NULL);
-    SVDSetProblemType(svd_fem_inv, SVD_STANDARD);
-    SVDSetType(svd_fem_inv, SVDTRLANCZOS);
-    SVDSetTolerances(svd_fem_inv, tol, max_it);
-    SVDSetDimensions(svd_fem_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
-    SVDSetWhichSingularTriplets(svd_fem_inv, SVD_LARGEST);
-    SVDSetFromOptions(svd_fem_inv);
-    SVDSolve(svd_fem_inv);
+        KSP ksp_fem_inv;
+        KSPCreate(PETSC_COMM_WORLD, &ksp_fem_inv);
+        KSPSetOperators(ksp_fem_inv, globalassem_fem->K, globalassem_fem->K);
+        KSPSetFromOptions(ksp_fem_inv);
+        KSPSetTolerances(ksp_fem_inv, rtol, abstol, divtol, maxits);
 
-    SVDGetConvergedReason(svd_fem_inv, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+        UserCtxK ctx_fem_inv;
+        ctx_fem_inv.ksp = ksp_fem_inv;
+        Mat M_fem_inv;
+        MatCreateShell(PETSC_COMM_WORLD, nlocalfunc_fem, nlocalfunc_fem, mm_fem, nn_fem, &ctx_fem_inv, &M_fem_inv);
+        MatShellSetOperation(M_fem_inv, MATOP_MULT, (void(*)(void))MyMatMultK);
+        MatShellSetOperation(M_fem_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultK);
 
-    PetscReal smax_fem_inv;
-    SVDGetSingularTriplet(svd_fem_inv, 0, &smax_fem_inv, NULL, NULL);
-    MatDestroy(&M_fem_inv);
-    KSPDestroy(&ksp_fem_inv);
-    SVDDestroy(&svd_fem_inv);
+        SVD svd_fem_inv;
+        SVDCreate(PETSC_COMM_WORLD, &svd_fem_inv);
+        SVDSetOperators(svd_fem_inv, M_fem_inv, NULL);
+        SVDSetProblemType(svd_fem_inv, SVD_STANDARD);
+        SVDSetType(svd_fem_inv, SVDTRLANCZOS);
+        SVDSetTolerances(svd_fem_inv, tol, max_it);
+        SVDSetFromOptions(svd_fem_inv);
+        SVDSetDimensions(svd_fem_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+        SVDSetWhichSingularTriplets(svd_fem_inv, SVD_LARGEST);
+        SVDSolve(svd_fem_inv);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfem: %.15g\n", 1/smax_fem_inv);
-    PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfem: %.15g\n", smax_fem * smax_fem_inv);
+        SVDGetConvergedReason(svd_fem_inv, &reason);
+        PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    // Compute the maximum singular value of K
-    SVD svd_K;
-    SVDCreate(PETSC_COMM_WORLD, &svd_K);
-    SVDSetOperators(svd_K, globalassem->K, NULL);
-    SVDSetProblemType(svd_K, SVD_STANDARD);
-    SVDSetType(svd_K, SVDTRLANCZOS);
-    SVDSetTolerances(svd_K, tol, max_it);
-    SVDSetFromOptions(svd_K);
+        PetscInt nconv_fem_inv = 0;
+        SVDGetConverged(svd_fem_inv, &nconv_fem_inv);
+        if (nconv_fem_inv < 1)
+        {
+            PetscPrintf(PETSC_COMM_WORLD,
+                "No singular triplet converged for inverse Kfem shell; skip singular value extraction.\n");
+            PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfem: unavailable\n");
+            PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfem: unavailable\n");
+        }
+        else
+        {
+            PetscReal smax_fem_inv = 0.0;
+            SVDGetSingularTriplet(svd_fem_inv, 0, &smax_fem_inv, NULL, NULL);
+            PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of Kfem: %.15g\n", 1.0 / smax_fem_inv);
+            PetscPrintf(PETSC_COMM_WORLD, "Condition number of Kfem: %.15g\n", smax_fem * smax_fem_inv);
+        }
 
-    SVDSetDimensions(svd_K, 1, PETSC_DEFAULT, PETSC_DEFAULT);
-    SVDSetWhichSingularTriplets(svd_K, SVD_LARGEST);
-    SVDSolve(svd_K);
+        SVDDestroy(&svd_fem_inv);
+        MatDestroy(&M_fem_inv);
+        KSPDestroy(&ksp_fem_inv);
 
-    SVDGetConvergedReason(svd_K, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+        PetscInt mm, nn;
+        MatGetSize(globalassem->K, &mm, &nn);
 
-    PetscReal smax_K;
-    SVDGetSingularTriplet(svd_K, 0, &smax_K, NULL, NULL);
+        SVD svd_K;
+        SVDCreate(PETSC_COMM_WORLD, &svd_K);
+        SVDSetOperators(svd_K, globalassem->K, NULL);
+        SVDSetProblemType(svd_K, SVD_STANDARD);
+        SVDSetType(svd_K, SVDTRLANCZOS);
+        SVDSetTolerances(svd_K, tol, max_it);
+        SVDSetFromOptions(svd_K);
+        SVDSetDimensions(svd_K, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+        SVDSetWhichSingularTriplets(svd_K, SVD_LARGEST);
+        SVDSolve(svd_K);
 
-    SVDDestroy(&svd_K);
+        SVDGetConvergedReason(svd_K, &reason);
+        PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of K: %.15g\n", smax_K);
+        PetscReal smax_K = 0.0;
+        SVDGetSingularTriplet(svd_K, 0, &smax_K, NULL, NULL);
+        PetscPrintf(PETSC_COMM_WORLD, "Maximum singular value of K: %.15g\n", smax_K);
+        SVDDestroy(&svd_K);
 
-    // Compute the maximum singular value of the inverse of K
-    KSP ksp_K_inv;
-    KSPCreate(PETSC_COMM_WORLD, &ksp_K_inv);
-    KSPSetOperators(ksp_K_inv, globalassem->K, globalassem->K);
-    KSPSetFromOptions(ksp_K_inv);
-    KSPSetTolerances(ksp_K_inv, rtol, abstol, divtol, maxits);
+        KSP ksp_K_inv;
+        KSPCreate(PETSC_COMM_WORLD, &ksp_K_inv);
+        KSPSetOperators(ksp_K_inv, globalassem->K, globalassem->K);
+        KSPSetFromOptions(ksp_K_inv);
+        KSPSetTolerances(ksp_K_inv, rtol, abstol, divtol, maxits);
 
-    UserCtxK ctx_K_inv;
-    ctx_K_inv.ksp = ksp_K_inv;
-    Mat M_K_inv;
-    MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx_K_inv, &M_K_inv);
-    MatShellSetOperation(M_K_inv, MATOP_MULT, (void(*)(void))MyMatMultK);
-    MatShellSetOperation(M_K_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultK);
+        UserCtxK ctx_K_inv;
+        ctx_K_inv.ksp = ksp_K_inv;
+        Mat M_K_inv;
+        MatCreateShell(PETSC_COMM_WORLD, nlocalfunc, nlocalfunc, mm, nn, &ctx_K_inv, &M_K_inv);
+        MatShellSetOperation(M_K_inv, MATOP_MULT, (void(*)(void))MyMatMultK);
+        MatShellSetOperation(M_K_inv, MATOP_MULT_TRANSPOSE, (void(*)(void))MyMatMultK);
 
-    SVD svd_K_inv;
-    SVDCreate(PETSC_COMM_WORLD, &svd_K_inv);
-    SVDSetOperators(svd_K_inv, M_K_inv, NULL);
-    SVDSetProblemType(svd_K_inv, SVD_STANDARD);
-    SVDSetType(svd_K_inv, SVDTRLANCZOS);
-    SVDSetTolerances(svd_K_inv, tol, max_it);
-    SVDSetFromOptions(svd_K_inv);
+        SVD svd_K_inv;
+        SVDCreate(PETSC_COMM_WORLD, &svd_K_inv);
+        SVDSetOperators(svd_K_inv, M_K_inv, NULL);
+        SVDSetProblemType(svd_K_inv, SVD_STANDARD);
+        SVDSetType(svd_K_inv, SVDTRLANCZOS);
+        SVDSetTolerances(svd_K_inv, tol, max_it);
+        SVDSetFromOptions(svd_K_inv);
+        SVDSetDimensions(svd_K_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
+        SVDSetWhichSingularTriplets(svd_K_inv, SVD_LARGEST);
+        SVDSolve(svd_K_inv);
 
-    SVDSetDimensions(svd_K_inv, 1, PETSC_DEFAULT, PETSC_DEFAULT);
-    SVDSetWhichSingularTriplets(svd_K_inv, SVD_LARGEST);
-    SVDSolve(svd_K_inv);
+        SVDGetConvergedReason(svd_K_inv, &reason);
+        PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
 
-    SVDGetConvergedReason(svd_K_inv, &reason);
-    PetscPrintf(PETSC_COMM_WORLD, "Convergence reason: %d\n", reason);
+        PetscInt nconv_K_inv = 0;
+        SVDGetConverged(svd_K_inv, &nconv_K_inv);
+        if (nconv_K_inv < 1)
+        {
+            PetscPrintf(PETSC_COMM_WORLD,
+                "No singular triplet converged for inverse K shell; skip singular value extraction.\n");
+            PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of K: unavailable\n");
+            PetscPrintf(PETSC_COMM_WORLD, "Condition number of K: unavailable\n");
+        }
+        else
+        {
+            PetscReal smax_K_inv = 0.0;
+            SVDGetSingularTriplet(svd_K_inv, 0, &smax_K_inv, NULL, NULL);
+            PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of K: %.15g\n", 1.0 / smax_K_inv);
+            PetscPrintf(PETSC_COMM_WORLD, "Condition number of K: %.15g\n", smax_K * smax_K_inv);
+        }
 
-    PetscReal smax_K_inv;
-    SVDGetSingularTriplet(svd_K_inv, 0, &smax_K_inv, NULL, NULL);
+        SVDDestroy(&svd_K_inv);
+        MatDestroy(&M_K_inv);
+        KSPDestroy(&ksp_K_inv);
 
-    MatDestroy(&M_K_inv);
-    KSPDestroy(&ksp_K_inv);
-    SVDDestroy(&svd_K_inv);
+        KSPDestroy(&ksp);
+    }
+    else
+    {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "Using EPS spectral analysis for explicit Kfem and K.\n");
 
-    PetscPrintf(PETSC_COMM_WORLD, "Minimum singular value of K: %.15g\n", 1/smax_K_inv);
-    PetscPrintf(PETSC_COMM_WORLD, "Condition number of K: %.15g\n", smax_K * smax_K_inv);
+        Mat K_neg = nullptr;
+        Mat Kfem_neg = nullptr;
+        MatDuplicate(globalassem->K, MAT_COPY_VALUES, &K_neg);
+        MatDuplicate(globalassem_fem->K, MAT_COPY_VALUES, &Kfem_neg);
+        MatScale(K_neg, -1.0);
+        MatScale(Kfem_neg, -1.0);
+        PetscPrintf(PETSC_COMM_WORLD,
+            "Negated explicit matrices K and Kfem before EPS analysis.\n");
+
+        AnalyzeWithEPS(Kfem_neg, "Kfem", tol, max_it);
+        AnalyzeWithEPS(K_neg, "K", tol, max_it);
+
+        PetscPrintf(PETSC_COMM_WORLD,
+            "EPS mode does not analyze Kfull because the current EPS route is only implemented for explicit matrices.\n");
+
+        MatDestroy(&K_neg);
+        MatDestroy(&Kfem_neg);
+    }
     
     delete fm; fm = nullptr;
     delete elem; elem = nullptr;
