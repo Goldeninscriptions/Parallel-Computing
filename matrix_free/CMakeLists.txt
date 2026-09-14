@@ -78,5 +78,11 @@ target_link_libraries(multtest_mf matrix_free_lib ${PETSC_LIB})
 add_executable(multtest_mfsf multtest_mfsf.cpp)
 target_link_libraries(multtest_mfsf matrix_free_lib ${PETSC_LIB})
 
+add_executable(assembletest_mf assembletest_mf.cpp)
+target_link_libraries(assembletest_mf matrix_free_lib ${PETSC_LIB})
+
+add_executable(assembletest_mfsf assembletest_mfsf.cpp)
+target_link_libraries(assembletest_mfsf matrix_free_lib ${PETSC_LIB})
+
 pc_enable_openmp_for_targets(matrix_free_lib preprocess preprocess_fem)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/message_compiler_setup.cmake)

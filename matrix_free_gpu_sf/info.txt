@@ -1,0 +1,9 @@
+p: 3
+q: 3
+Lx: 1
+Ly: 1
+nElemX: 16
+nElemY: 16
+part_num_1d: 1
+dim: 2
+base_name: part
