@@ -240,7 +240,9 @@ void ElementMFSF::GenerateElement(const QuadraturePoint * const &quad1,
     std::vector<double> &B1, std::vector<double> &B2,
     std::vector<double> &dB1, std::vector<double> &dB2,
     std::vector<double> &W, std::vector<double> &J,
-    std::vector<double> &dW_dx, std::vector<double> &dW_dy) const
+    std::vector<double> &dW_dxi, std::vector<double> &dW_deta,
+    std::vector<double> &dxi_dx, std::vector<double> &dxi_dy,
+    std::vector<double> &deta_dx, std::vector<double> &deta_dy) const
 {
     const int nqp1 = quad1->GetNumQuadraturePoint();
     const int nqp2 = quad2->GetNumQuadraturePoint();
@@ -253,8 +255,12 @@ void ElementMFSF::GenerateElement(const QuadraturePoint * const &quad1,
     dB2.clear();
     W.clear();
     J.clear();
-    dW_dx.clear();
-    dW_dy.clear();
+    dW_dxi.clear();
+    dW_deta.clear();
+    dxi_dx.clear();
+    dxi_dy.clear();
+    deta_dx.clear();
+    deta_dy.clear();
 
     for (int ii = 0; ii < nqp1; ++ii)
     {
@@ -265,33 +271,94 @@ void ElementMFSF::GenerateElement(const QuadraturePoint * const &quad1,
         GenerateBSplineBasis1D(qp1[ii], N1, N2, dN1, dN2);
 
         B1.insert(B1.end(), N1.begin(), N1.end());
-        B2.insert(B2.end(), N2.begin(), N2.end());
         dB1.insert(dB1.end(), dN1.begin(), dN1.end());
-        dB2.insert(dB2.end(), dN2.begin(), dN2.end());
     }
 
     for (int jj = 0; jj < nqp2; ++jj)
     {
+        std::vector<double> N1{};
+        std::vector<double> dN1{};
         std::vector<double> N2{};
         std::vector<double> dN2{};
-        N2.assign(B2.begin() + jj*(q+1), B2.begin() + (jj+1)*(q+1));
-        dN2.assign(dB2.begin() + jj*(q+1), dB2.begin() + (jj+1)*(q+1));
+        GenerateBSplineBasis1D(qp2[jj], N1, N2, dN1, dN2);
+
+        B2.insert(B2.end(), N2.begin(), N2.end());
+        dB2.insert(dB2.end(), dN2.begin(), dN2.end());
+    }
+
+    std::vector<double> weight_stage(nqp1*(q+1), 0.0);
+    std::vector<double> weight_der_stage(nqp1*(q+1), 0.0);
+    std::vector<double> x_stage(nqp1*(q+1), 0.0);
+    std::vector<double> x_der_stage(nqp1*(q+1), 0.0);
+    std::vector<double> y_stage(nqp1*(q+1), 0.0);
+    std::vector<double> y_der_stage(nqp1*(q+1), 0.0);
+    for (int ii = 0; ii < nqp1; ++ii)
+    {
+        for (int j = 0; j < q+1; ++j)
+        {
+            for (int i = 0; i < p+1; ++i)
+            {
+                const int stage = ii*(q+1)+j;
+                const int basis = j*(p+1)+i;
+                weight_stage[stage] += B1[ii*(p+1)+i];
+                weight_der_stage[stage] += dB1[ii*(p+1)+i];
+                x_stage[stage] += B1[ii*(p+1)+i] * eCP[2*basis];
+                x_der_stage[stage] += dB1[ii*(p+1)+i] * eCP[2*basis];
+                y_stage[stage] += B1[ii*(p+1)+i] * eCP[2*basis+1];
+                y_der_stage[stage] += dB1[ii*(p+1)+i] * eCP[2*basis+1];
+            }
+        }
+    }
+
+    for (int jj = 0; jj < nqp2; ++jj)
+    {
         for (int ii = 0; ii < nqp1; ++ii)
         {
-            std::vector<double> N1{};
-            std::vector<double> dN1{};
-            N1.assign(B1.begin() + ii*(p+1), B1.begin() + (ii+1)*(p+1));
-            dN1.assign(dB1.begin() + ii*(p+1), dB1.begin() + (ii+1)*(p+1));
+            double weight_sum = 0.0;
+            double weight_der_xi = 0.0;
+            double weight_der_eta = 0.0;
+            double x_numerator = 0.0;
+            double x_numerator_der_xi = 0.0;
+            double x_numerator_der_eta = 0.0;
+            double y_numerator = 0.0;
+            double y_numerator_der_xi = 0.0;
+            double y_numerator_der_eta = 0.0;
+            for (int j = 0; j < q+1; ++j)
+            {
+                const int stage = ii*(q+1)+j;
+                const double basis2 = B2[jj*(q+1)+j];
+                const double basis_der2 = dB2[jj*(q+1)+j];
+                weight_sum += basis2 * weight_stage[stage];
+                weight_der_xi += basis2 * weight_der_stage[stage];
+                weight_der_eta += basis_der2 * weight_stage[stage];
+                x_numerator += basis2 * x_stage[stage];
+                x_numerator_der_xi += basis2 * x_der_stage[stage];
+                x_numerator_der_eta += basis_der2 * x_stage[stage];
+                y_numerator += basis2 * y_stage[stage];
+                y_numerator_der_xi += basis2 * y_der_stage[stage];
+                y_numerator_der_eta += basis_der2 * y_stage[stage];
+            }
 
-            double w, jacobian, dw_dx, dw_dy;
-            GenerateElementSingleQP(eCP,
-                N1, N2, dN1, dN2,
-                w, jacobian, dw_dx, dw_dy);
+            const double x = x_numerator / weight_sum;
+            const double y = y_numerator / weight_sum;
+            const double dx_dxi =
+                (x_numerator_der_xi - weight_der_xi*x) / weight_sum;
+            const double dx_deta =
+                (x_numerator_der_eta - weight_der_eta*x) / weight_sum;
+            const double dy_dxi =
+                (y_numerator_der_xi - weight_der_xi*y) / weight_sum;
+            const double dy_deta =
+                (y_numerator_der_eta - weight_der_eta*y) / weight_sum;
 
-            W.push_back(w);
-            J.push_back(jacobian);
-            dW_dx.push_back(dw_dx);
-            dW_dy.push_back(dw_dy);
+            const double jacobian_param = dx_dxi*dy_deta - dx_deta*dy_dxi;
+            W.push_back(weight_sum);
+            J.push_back(jacobian_param * hx * hy);
+            dW_dxi.push_back(weight_der_xi);
+            dW_deta.push_back(weight_der_eta);
+            dxi_dx.push_back(dy_deta / jacobian_param);
+            dxi_dy.push_back(-dx_deta / jacobian_param);
+            deta_dx.push_back(-dy_dxi / jacobian_param);
+            deta_dy.push_back(dx_dxi / jacobian_param);
         }
     }
 }

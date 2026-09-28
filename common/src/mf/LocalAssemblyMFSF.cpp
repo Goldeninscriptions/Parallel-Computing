@@ -3,39 +3,67 @@
 void LocalAssemblyMFSF::AssemLocalLoad(ElementMFSF * const &elem,
     const std::vector<double> &eCP)
 {
-    std::vector<double> R{};
-    std::vector<double> J{};
-    elem->GenerateElement(quad1, quad2, eCP, R, J);
-    const int nqp1 = quad1->GetNumQuadraturePoint();
-    const int nqp2 = quad2->GetNumQuadraturePoint();
+    std::vector<double> B1, B2, dB1, dB2, W, J, dW_dxi, dW_deta;
+    std::vector<double> dxi_dx, dxi_dy, deta_dx, deta_dy;
+    elem->GenerateElement(quad1, quad2, eCP, B1, B2, dB1, dB2,
+        W, J, dW_dxi, dW_deta, dxi_dx, dxi_dy, deta_dx, deta_dy);
+
     const std::vector<double> qw1 = quad1->GetWeight();
     const std::vector<double> qw2 = quad2->GetWeight();
-    std::vector<double> qw{};
-    for (int i = 0; i < nqp1; ++i)
+
+    // Forward tensor contraction evaluates the physical coordinates at quadrature points.
+    std::vector<double> x_stage(nx*ny, 0.0);
+    std::vector<double> y_stage(nx*ny, 0.0);
+    for (int qx = 0; qx < nx; ++qx)
     {
-        for (int j = 0; j < nqp2; ++j)
+        for (int j = 0; j < ny; ++j)
         {
-            qw.push_back(qw1[j] * qw2[i]);
+            for (int i = 0; i < nx; ++i)
+            {
+                const int basis = j*nx+i;
+                x_stage[qx*ny+j] += B1[qx*nx+i] * eCP[2*basis];
+                y_stage[qx*ny+j] += B1[qx*nx+i] * eCP[2*basis+1];
+            }
         }
     }
-    const int nqp = nqp1 * nqp2;
-    const int n = elem->GetNumLocalBasis();
+
+    std::vector<double> source(nx*ny, 0.0);
+    for (int qy = 0; qy < ny; ++qy)
+    {
+        for (int qx = 0; qx < nx; ++qx)
+        {
+            const int qp = qy*nx+qx;
+            double x = 0.0;
+            double y = 0.0;
+            for (int j = 0; j < ny; ++j)
+            {
+                x += B2[qy*ny+j] * x_stage[qx*ny+j];
+                y += B2[qy*ny+j] * y_stage[qx*ny+j];
+            }
+            x /= W[qp];
+            y /= W[qp];
+            source[qp] = Getf(x, y) * qw1[qx] * qw2[qy] * J[qp] / W[qp];
+        }
+    }
+
+    // Transpose tensor contraction applies the test basis without a local matrix.
+    std::vector<double> backward_x(ny*nx, 0.0);
+    for (int qy = 0; qy < ny; ++qy)
+    {
+        for (int i = 0; i < nx; ++i)
+        {
+            for (int qx = 0; qx < nx; ++qx)
+                backward_x[qy*nx+i] += B1[qx*nx+i] * source[qy*nx+qx];
+        }
+    }
 
     ResetLoad();
-
-    for (int ii = 0; ii < nqp; ++ii)
+    for (int j = 0; j < ny; ++j)
     {
-        double x = 0.0;
-        double y = 0.0;
-        for (int jj = 0; jj < n; ++jj)
+        for (int i = 0; i < nx; ++i)
         {
-            x += R[ii*n+jj] * eCP[2*jj];
-            y += R[ii*n+jj] * eCP[2*jj+1];
-        }
-
-        for (int jj = 0; jj < n; ++jj)
-        {
-            Floc[jj] += R[ii*n+jj] * Getf(x, y) * qw[ii] * J[ii];
+            for (int qy = 0; qy < ny; ++qy)
+                Floc[j*nx+i] += B2[qy*ny+j] * backward_x[qy*nx+i];
         }
     }
 }
@@ -43,61 +71,99 @@ void LocalAssemblyMFSF::AssemLocalLoad(ElementMFSF * const &elem,
 void LocalAssemblyMFSF::LocalMatMulMF(ElementMFSF * const &elem,
     const std::vector<double> &eCP)
 {
-    std::vector<double> B1, B2, dB1, dB2, W, J, dW_dx, dW_dy;
-    elem->GenerateElement(quad1, quad2, eCP, B1, B2, dB1, dB2, W, J, dW_dx, dW_dy);
-    const int nqp1 = quad1->GetNumQuadraturePoint();
-    const int nqp2 = quad2->GetNumQuadraturePoint();
+    std::vector<double> B1, B2, dB1, dB2, W, J, dW_dxi, dW_deta;
+    std::vector<double> dxi_dx, dxi_dy, deta_dx, deta_dy;
+    elem->GenerateElement(quad1, quad2, eCP, B1, B2, dB1, dB2,
+        W, J, dW_dxi, dW_deta, dxi_dx, dxi_dy, deta_dx, deta_dy);
+
     const std::vector<double> qw1 = quad1->GetWeight();
     const std::vector<double> qw2 = quad2->GetWeight();
-    const int n = elem->GetNumLocalBasis();
 
-    ResetStiffnessLoadOut();
-
-    for (int i = 0; i < n; ++i)
+    // Forward SF: contract first in xi, then in eta to obtain u and its derivatives.
+    std::vector<PetscScalar> value_x(nx*ny, 0.0);
+    std::vector<PetscScalar> derivative_x_stage(nx*ny, 0.0);
+    for (int qx = 0; qx < nx; ++qx)
     {
-        int i1 = map[i*2];
-        int i2 = map[i*2+1];
-        for (int j = 0; j < n; ++j)
+        for (int j = 0; j < ny; ++j)
         {
-            int j1 = map[j*2];
-            int j2 = map[j*2+1];
-            for (int ii = 0; ii < nqp1; ++ii)
+            for (int i = 0; i < nx; ++i)
             {
-                double temp1 = 0.0;
-                double temp2 = 0.0;
-                double temp3 = 0.0;
-                double temp4 = 0.0;
-                double temp5 = 0.0;
-                double temp6 = 0.0;
-                double temp7 = 0.0;
-
-                for (int jj = 0; jj < nqp2; ++jj)
-                {
-                    temp1 += qw2[jj] * B2[nqp2*jj+i2] * B2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj]);
-                    temp2 += qw2[jj] * dB2[nqp2*jj+i2] * dB2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj]);
-                    temp3 += qw2[jj] * B2[nqp2*jj+i2] * B2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj] * W[ii*nqp2+jj]) * dW_dx[ii*nqp2+jj];
-                    temp4 += qw2[jj] * B2[nqp2*jj+i2] * B2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj] * W[ii*nqp2+jj]) * dW_dx[ii*nqp2+jj];
-                    temp5 += qw2[jj] * B2[nqp2*jj+i2] * dB2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj] * W[ii*nqp2+jj]) * dW_dy[ii*nqp2+jj];
-                    temp6 += qw2[jj] * dB2[nqp2*jj+i2] * B2[nqp2*jj+j2] * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj] * W[ii*nqp2+jj]) * dW_dy[ii*nqp2+jj];
-                    temp7 += qw2[jj] * B2[nqp2*jj+i2] * B2[nqp2*jj+j2] * (dW_dx[ii*nqp2+jj] * dW_dx[ii*nqp2+jj] + dW_dy[ii*nqp2+jj] 
-                            * dW_dy[ii*nqp2+jj]) * J[ii*nqp2+jj] / (W[ii*nqp2+jj] * W[ii*nqp2+jj]);
-                }
-                Kloc[i*n+j] -= qw1[ii] * (dB1[nqp1*ii+i1] * dB1[nqp1*ii+j1] * temp1
-                    + B1[nqp1*ii+i1] * B1[nqp1*ii+j1] * temp2
-                    - B1[nqp1*ii+i1] * dB1[nqp1*ii+j1] * temp3
-                    - dB1[nqp1*ii+i1] * B1[nqp1*ii+j1] * temp4
-                    - B1[nqp1*ii+i1] * B1[nqp1*ii+j1] * temp5
-                    - B1[nqp1*ii+i1] * B1[nqp1*ii+j1] * temp6
-                    - B1[nqp1*ii+i1] * B1[nqp1*ii+j1] * temp7);
+                const PetscScalar value = Floc_in[j*nx+i];
+                value_x[qx*ny+j] += B1[qx*nx+i] * value;
+                derivative_x_stage[qx*ny+j] += dB1[qx*nx+i] * value;
             }
         }
     }
 
-    for (int i = 0; i < n; ++i)
+    std::vector<PetscScalar> scale_xi(nx*ny, 0.0);
+    std::vector<PetscScalar> scale_eta(nx*ny, 0.0);
+    std::vector<PetscScalar> scale_value(nx*ny, 0.0);
+    for (int qy = 0; qy < ny; ++qy)
     {
-        for (int j = 0; j < n; ++j)
+        for (int qx = 0; qx < nx; ++qx)
         {
-            Floc_out[i] += Kloc[i*n+j] * Floc_in[j];
+            const int qp = qy*nx+qx;
+            PetscScalar value = 0.0;
+            PetscScalar derivative_xi = 0.0;
+            PetscScalar derivative_eta = 0.0;
+            for (int j = 0; j < ny; ++j)
+            {
+                value += B2[qy*ny+j] * value_x[qx*ny+j];
+                derivative_xi += B2[qy*ny+j] * derivative_x_stage[qx*ny+j];
+                derivative_eta += dB2[qy*ny+j] * value_x[qx*ny+j];
+            }
+
+            value /= W[qp];
+            derivative_xi = (derivative_xi - dW_dxi[qp]*value) / W[qp];
+            derivative_eta = (derivative_eta - dW_deta[qp]*value) / W[qp];
+
+            const PetscScalar derivative_x =
+                dxi_dx[qp]*derivative_xi + deta_dx[qp]*derivative_eta;
+            const PetscScalar derivative_y =
+                dxi_dy[qp]*derivative_xi + deta_dy[qp]*derivative_eta;
+            const PetscScalar coefficient_xi =
+                dxi_dx[qp]*derivative_x + dxi_dy[qp]*derivative_y;
+            const PetscScalar coefficient_eta =
+                deta_dx[qp]*derivative_x + deta_dy[qp]*derivative_y;
+            const double quadrature_scale = J[qp] * qw1[qx] * qw2[qy];
+
+            scale_xi[qp] = coefficient_xi * quadrature_scale / W[qp];
+            scale_eta[qp] = coefficient_eta * quadrature_scale / W[qp];
+            scale_value[qp] =
+                -(dW_dxi[qp]*coefficient_xi + dW_deta[qp]*coefficient_eta)
+                * quadrature_scale / (W[qp]*W[qp]);
+        }
+    }
+
+    // Backward SF: apply the transposed derivative/value bases in reverse order.
+    std::vector<PetscScalar> backward_value(ny*nx, 0.0);
+    std::vector<PetscScalar> backward_eta(ny*nx, 0.0);
+    for (int qy = 0; qy < ny; ++qy)
+    {
+        for (int i = 0; i < nx; ++i)
+        {
+            for (int qx = 0; qx < nx; ++qx)
+            {
+                const int qp = qy*nx+qx;
+                backward_value[qy*nx+i] +=
+                    dB1[qx*nx+i]*scale_xi[qp] + B1[qx*nx+i]*scale_value[qp];
+                backward_eta[qy*nx+i] += B1[qx*nx+i]*scale_eta[qp];
+            }
+        }
+    }
+
+    ResetStiffnessLoadOut();
+    for (int j = 0; j < ny; ++j)
+    {
+        for (int i = 0; i < nx; ++i)
+        {
+            PetscScalar value = 0.0;
+            for (int qy = 0; qy < ny; ++qy)
+            {
+                value += B2[qy*ny+j]*backward_value[qy*nx+i]
+                    + dB2[qy*ny+j]*backward_eta[qy*nx+i];
+            }
+            Floc_out[j*nx+i] = -value;
         }
     }
 }

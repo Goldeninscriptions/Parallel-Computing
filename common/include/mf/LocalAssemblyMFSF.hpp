@@ -10,25 +10,15 @@ class LocalAssemblyMFSF
         PetscScalar *Floc_in;
         PetscScalar *Floc_out;
         PetscScalar *Floc;
-        PetscScalar *Kloc;
 
         LocalAssemblyMFSF(const int &p, const int &q)
-            : n((p+1)*(q+1))
+            : nx(p+1), ny(q+1), n(nx*ny)
         {
-            quad1 = new QuadraturePoint(p+1, 0, 1);
-            quad2 = new QuadraturePoint(q+1, 0, 1);
+            quad1 = new QuadraturePoint(nx, 0, 1);
+            quad2 = new QuadraturePoint(ny, 0, 1);
             Floc = new PetscScalar[n];
-            Kloc = new PetscScalar[n*n];
             Floc_in = new PetscScalar[n];
             Floc_out = new PetscScalar[n];
-            for (int i = 0; i < p+1; ++i)
-            {
-                for (int j = 0; j < q+1; ++j)
-                {
-                    map.push_back(j);
-                    map.push_back(i);
-                }
-            }
         }
 
         ~LocalAssemblyMFSF()
@@ -36,7 +26,6 @@ class LocalAssemblyMFSF
             delete quad1; quad1 = nullptr;
             delete quad2; quad2 = nullptr;
             delete[] Floc; Floc = nullptr;
-            delete[] Kloc; Kloc = nullptr;
             delete[] Floc_in; Floc_in = nullptr;
             delete[] Floc_out; Floc_out = nullptr;
         }
@@ -48,8 +37,9 @@ class LocalAssemblyMFSF
             const std::vector<double> &eCP);
 
     private:
+        const int nx;
+        const int ny;
         const int n;
-        std::vector<int> map{};
         QuadraturePoint * quad1;
         QuadraturePoint * quad2;
 
@@ -66,8 +56,6 @@ class LocalAssemblyMFSF
 
         void ResetStiffnessLoadOut()
         {
-            for (int i = 0; i < n*n; ++i)
-                Kloc[i] = 0.0;
             for (int i = 0; i < n; ++i)
                 Floc_out[i] = 0.0;
         }

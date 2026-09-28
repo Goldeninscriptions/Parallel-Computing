@@ -59,7 +59,9 @@ class ElementMFSF
             std::vector<double> &B1, std::vector<double> &B2,
             std::vector<double> &dB1, std::vector<double> &dB2,
             std::vector<double> &W, std::vector<double> &J,
-            std::vector<double> &dW_dx, std::vector<double> &dW_dy) const;
+            std::vector<double> &dW_dxi, std::vector<double> &dW_deta,
+            std::vector<double> &dxi_dx, std::vector<double> &dxi_dy,
+            std::vector<double> &deta_dx, std::vector<double> &deta_dy) const;
     
     private:
         const int p;
