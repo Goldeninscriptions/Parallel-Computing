@@ -84,5 +84,15 @@ target_link_libraries(assembletest_mf matrix_free_lib ${PETSC_LIB})
 add_executable(assembletest_mfsf assembletest_mfsf.cpp)
 target_link_libraries(assembletest_mfsf matrix_free_lib ${PETSC_LIB})
 
+add_executable(complexity_benchmark complexity_benchmark.cpp)
+target_link_libraries(complexity_benchmark matrix_free_lib ${PETSC_LIB})
+
+add_executable(arithmetic_complexity_benchmark arithmetic_complexity_benchmark.cpp)
+target_link_libraries(arithmetic_complexity_benchmark matrix_free_lib ${PETSC_LIB})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(arithmetic_complexity_benchmark PRIVATE
+    -fno-tree-vectorize -fno-tree-slp-vectorize)
+endif()
+
 pc_enable_openmp_for_targets(matrix_free_lib preprocess preprocess_fem)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../conf/message_compiler_setup.cmake)
